@@ -304,3 +304,18 @@ EMEA Redis/Valkey (TLS), RabbitMQ access for `marketplace_callbacks` and its DLQ
 - `docs/cutover-2026-09-18/uk-tracker-cutover.html`, `docs/cutover-2026-09-18/callers-report.md`
 - `tracker-service/README.md`, `tracker-service/CLAUDE.md`
 - Slack: questions to Sergey Shelekhov (DM, 2026-10-22). Spec shared with Sergey, Moshe Basall and Ariel Pinchover.
+
+## 15. Tracking
+
+| Item | Key | Assignee | QA |
+|---|---|---|---|
+| Epic (relates to ALGO-2532) | DAAS-634 | – | – |
+| daas-uber | DAAS-635 | Sergey Shelekhov | Tal Zamir |
+| daas-gateway | DAAS-636 | Sergey Shelekhov | Tal Zamir |
+| tracker-service (blocked by DAAS-639) | DAAS-637 | Sergey Shelekhov | Tal Zamir |
+| mp-uber | DAAS-638 | Sergey Shelekhov | Tal Zamir |
+| Infra (DevOps task) | DAAS-639 | Ehab Jaber | – |
+
+Repos: https://bitbucket.org/dragontailcom/daas-uber, https://bitbucket.org/dragontailcom/daas-gateway, https://bitbucket.org/dragontailcom/tracker-service, https://bitbucket.org/dragontailcom/mp-uber
+
+Pending (2026-10-22): Sergey's answer on O-1; Sergey's GitHub username for read access to this private repo.
