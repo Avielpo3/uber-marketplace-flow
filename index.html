@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{color-scheme:light;box-sizing:border-box}body{margin:0;padding:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Uber Marketplace Flow</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=Source+Sans+3:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: spec document — sticky section index on the left, one reading column on the right; diagrams, tables and code scroll in their own frames */
+:root{
+  --bg:#f4f5f2; --surface:#ffffff; --sunk:#eceee9; --fg:#1b211d; --muted:#5a6560; --line:#d6dbd5;
+  --ctl:#1f6b4f; --ctl-soft:#e1efe8; --loc:#2f5bd0; --loc-soft:#e5ebfb;
+  --block:#b3352a; --block-soft:#f9e6e3; --decide:#946200; --decide-soft:#f8efd6; --ready:#1f6b4f;
+  --display:"Source Serif 4", Georgia, serif; --body:"Source Sans 3", system-ui, sans-serif; --mono:"JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111513; --surface:#181d1a; --sunk:#1e2420; --fg:#e3e8e4; --muted:#97a39c; --line:#2b332e;
+  --ctl:#6fcca6; --ctl-soft:#173027; --loc:#8eaaff; --loc-soft:#1b2440;
+  --block:#f08a7d; --block-soft:#3a1d1a; --decide:#e7bb5a; --decide-soft:#342913; --ready:#6fcca6; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111513; --surface:#181d1a; --sunk:#1e2420; --fg:#e3e8e4; --muted:#97a39c; --line:#2b332e;
+  --ctl:#6fcca6; --ctl-soft:#173027; --loc:#8eaaff; --loc-soft:#1b2440;
+  --block:#f08a7d; --block-soft:#3a1d1a; --decide:#e7bb5a; --decide-soft:#342913; --ready:#6fcca6; color-scheme:dark}
+
+body{background:var(--bg);color:var(--fg);font:16px/1.6 var(--body)}
+.shell{max-width:1720px;margin:0 auto;padding-block:36px 72px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;grid-template-columns:190px minmax(0,1fr);gap:40px}
+nav.toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 24px);align-self:start;display:flex;flex-direction:column;gap:2px;font-size:14px}
+nav.toc .lbl{font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+nav.toc a{color:var(--muted);text-decoration:none;padding:5px 10px;border-left:2px solid var(--line);display:flex;gap:8px}
+nav.toc a span{font:500 12px var(--mono);color:var(--ctl);min-width:1.6em}
+nav.toc a:hover{color:var(--fg);border-left-color:var(--ctl)}
+main{display:flex;flex-direction:column;gap:56px;min-width:0}
+@media (max-width:900px){
+  .shell{grid-template-columns:minmax(0,1fr);gap:28px}
+  nav.toc{position:static;flex-direction:row;flex-wrap:wrap;gap:6px}
+  nav.toc .lbl{width:100%;margin:0}
+  nav.toc a{border:1px solid var(--line);border-radius:999px;padding:3px 10px;background:var(--surface)}
+}
+a{color:var(--ctl)} a:focus-visible{outline:2px solid var(--ctl);outline-offset:2px;border-radius:3px}
+h1{font:700 clamp(32px,5vw,48px)/1.08 var(--display);margin:0;text-wrap:balance;letter-spacing:-.01em}
+h2{font:600 26px/1.2 var(--display);margin:0;text-wrap:balance;display:flex;gap:12px;align-items:baseline}
+h2 .n{font:500 14px var(--mono);color:var(--ctl)}
+h3{font:600 17px/1.3 var(--body);margin:0}
+h4{font:600 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0}
+p{margin:0;max-width:110ch}
+section{display:flex;flex-direction:column;gap:18px;scroll-margin-top:24px}
+.sub{color:var(--muted)}
+code,.mono{font-family:var(--mono);font-size:.84em}
+code{background:var(--sunk);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+.eyebrow{font:600 12px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ctl)}
+.lede{font-size:18px;color:var(--muted);max-width:100ch}
+.meta{display:flex;flex-wrap:wrap;gap:6px 20px;font:13px var(--mono);color:var(--muted)}
+
+.chip{display:inline-block;font:600 11px var(--mono);padding:2px 8px;border-radius:999px;white-space:nowrap;vertical-align:2px}
+.chip.block{background:var(--block-soft);color:var(--block)}
+.chip.decide{background:var(--decide-soft);color:var(--decide)}
+.chip.ready{background:var(--ctl-soft);color:var(--ctl)}
+.chip.new{background:var(--ctl-soft);color:var(--ctl)}
+.chip.keep{background:var(--sunk);color:var(--muted)}
+.chip.loc{background:var(--loc-soft);color:var(--loc)}
+.chip.del{background:var(--block-soft);color:var(--block)}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 20px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px}
+.cols3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:14px}
+.stat{display:flex;flex-direction:column;gap:4px}
+.stat b{font:600 15px var(--body)}
+.stat p{font-size:14px;color:var(--muted)}
+.stripe{border-left:4px solid var(--line)}
+.stripe.block{border-left-color:var(--block)} .stripe.decide{border-left-color:var(--decide)} .stripe.ready{border-left-color:var(--ready)}
+
+.diagram{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;overflow-x:auto}
+.diagram pre.mermaid{margin:0;min-width:1300px;background:transparent}
+.arch svg{display:block;width:1960px;max-width:none;height:auto}
+.diagram{scrollbar-width:auto;scrollbar-color:var(--muted) var(--sunk)}
+.diagram::-webkit-scrollbar{height:12px}
+.diagram::-webkit-scrollbar-track{background:var(--sunk);border-radius:6px}
+.diagram::-webkit-scrollbar-thumb{background:var(--muted);border-radius:6px}
+.scrollhint{font:500 12px var(--mono);color:var(--muted);margin-bottom:-10px}
+.arch .zone{fill:var(--sunk);stroke:var(--line);stroke-dasharray:4 4}
+.arch .zl{font:600 11px var(--mono);letter-spacing:.08em;fill:var(--muted)}
+.arch .box rect{fill:var(--surface);stroke:var(--line);stroke-width:1.2}
+.arch .box.hl rect{stroke:var(--ctl);stroke-width:2}
+.arch .box rect.pill{fill:var(--loc-soft);stroke:var(--loc);stroke-width:1.2}
+.arch .bus{fill:var(--ctl-soft);stroke:var(--ctl);stroke-width:1.5}
+.arch .bt{font:600 14px var(--body);fill:var(--fg)}
+.arch .bs{font:400 11px var(--mono);fill:var(--muted)}
+.arch .bs.new{fill:var(--ctl);font-weight:500}
+.arch .bs.lc{fill:var(--loc);font-weight:500}
+.arch .e{fill:none;stroke-width:2}
+.arch .e.ctl{stroke:var(--ctl)} .arch .e.loc{stroke:var(--loc)}
+.arch .mk-ctl{fill:var(--ctl)} .arch .mk-loc{fill:var(--loc)}
+.arch .ec{font:500 11px var(--mono);fill:var(--fg)}
+.arch .bd circle{fill:var(--fg)} .arch .bd text{font:600 10px var(--mono);fill:var(--bg);text-anchor:middle}
+.legend{display:flex;flex-wrap:wrap;gap:6px 22px;font-size:14px;color:var(--muted)}
+.legend span::before{content:"";display:inline-block;width:20px;border-top:2px solid var(--ctl);vertical-align:middle;margin-right:7px}
+.legend .lg-loc::before{border-top-color:var(--loc)}
+
+.tablewrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:680px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:600 11px var(--mono);color:var(--muted);letter-spacing:.06em;text-transform:uppercase;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.who{white-space:nowrap;font-weight:600}
+
+.step{display:grid;grid-template-columns:44px minmax(0,1fr);gap:16px;align-items:start}
+.step .badge{width:36px;height:36px;border-radius:50%;background:var(--fg);color:var(--bg);font:600 14px var(--mono);display:grid;place-items:center}
+.step .badge.loc{background:var(--loc)}
+.step .body{display:flex;flex-direction:column;gap:10px;min-width:0}
+.step .route{font:500 13px var(--mono);color:var(--muted)}
+.kv{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 16px;font-size:14.5px}
+.kv dt{font:600 12px var(--mono);color:var(--muted);padding-top:2px}
+.kv dd{margin:0}
+@media (max-width:520px){.kv{grid-template-columns:minmax(0,1fr)} .kv dd{margin-bottom:6px}}
+
+ul.tasks{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+ul.tasks li{display:grid;grid-template-columns:18px minmax(0,1fr);gap:10px;font-size:14.5px}
+ul.tasks li::before{content:"";width:12px;height:12px;border:1.5px solid var(--muted);border-radius:3px;margin-top:5px}
+ul.tasks li.del::before{border-color:var(--block)}
+.repo{display:flex;flex-direction:column;gap:12px}
+.repo header{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:baseline}
+.repo header h3{font:600 17px var(--mono)}
+.repo .path{font:12px var(--mono);color:var(--muted)}
+.ref{font:12px var(--mono);color:var(--muted);white-space:nowrap}
+
+pre.code{margin:0;font:12.5px/1.6 var(--mono);background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;color:var(--fg)}
+pre.code b{color:var(--ctl);font-weight:600}
+pre.code i{color:var(--muted);font-style:normal}
+.note{font-size:13.5px;color:var(--muted)}
+</style>
+
+</head><body>
+<div class="shell">
+  <nav class="toc" aria-label="Sections">
+    <div class="lbl">Spec sections</div>
+    <a href="#summary"><span>00</span>Summary</a>
+    <a href="#blockers"><span>01</span>Before building</a>
+    <a href="#flow"><span>02</span>Flow</a>
+    <a href="#steps"><span>03</span>Step by step</a>
+    <a href="#contracts"><span>04</span>Contracts</a>
+    <a href="#statuses"><span>05</span>Statuses</a>
+    <a href="#repos"><span>06</span>Work per repo</a>
+    <a href="#failures"><span>07</span>Failure handling</a>
+    <a href="#rollout"><span>08</span>Rollout and tests</a>
+    <a href="#decisions"><span>09</span>Open decisions</a>
+  </nav>
+
+  <main>
+    <header id="summary" style="display:flex;flex-direction:column;gap:14px">
+      <div class="eyebrow">Technical spec · v4 · ph-uk (EMEA)</div>
+      <h1>Uber Marketplace Flow</h1>
+      <p class="lede">The switch is replaced by a regular create-delivery call to mp-uber, which tells mp-uber which orders to pull locations for. An Uber Eats order is always delivered by us, either by a store driver or, when none is free in time, by a daas-uber courier. Uber Eats only receives order statuses and courier locations. mp-uber sends both the same way for every order and never knows which kind of carrier delivered it.</p>
+      <div class="meta"><span>revised 2026-10-22</span><span>repos: algo · daas-uber · daas-gateway · tracker-service · mp-uber</span><span>file:line refs checked against local checkouts</span></div>
+      <div class="cols3">
+        <div class="panel stat"><b>Switch replaced</b><p><code>/order/switch</code> becomes <code>/mp/uber/order/delivery</code>, which registers the order in mp-uber. Nothing calls <code>switch-fulfillment-type</code> any more, so the order stays a restaurant delivery (BYOC).</p></div>
+        <div class="panel stat"><b>mp-uber doesn't know the carrier</b><p>Statuses come from Algo. Locations come from tracker-service, under the same Redis key for store drivers and DaaS couriers.</p></div>
+        <div class="panel stat"><b>2 blockers, 4 decisions</b><p>tracker-service isn't deployed and EMEA has no Redis. Decisions cover market lookup, point limit, auth, and the push-to-pull cutover.</p></div>
+      </div>
+    </header>
+
+    <section id="blockers">
+      <h2><span class="n">01</span>Before building</h2>
+      <div class="cols">
+        <div class="panel stripe block"><span class="chip block">blocker · steps 5–7</span><h3>tracker-service is not deployed</h3><p>The README says "Not yet deployed". There are no ECS or Terraform definitions in the checkout <span class="ref">docs/cutover-2026-09-18/callers-report.md:23</span>. It needs an EMEA deployment with access to RabbitMQ and Redis.</p></div>
+        <div class="panel stripe block"><span class="chip block">blocker · step 6</span><h3>No Redis in EMEA prod</h3><p>"none exists in the EMEA prod account today" <span class="ref">docs/cutover-2026-09-18/uk-tracker-cutover.html:94</span>. ElastiCache would be Valkey, and serverless needs <code>REDIS_TLS</code> <span class="ref">tracker-service/CLAUDE.md:121</span>.</p></div>
+        <div class="panel stripe decide"><span class="chip decide">confirm</span><h3>Uber accepts status for these orders</h3><p>Store-driver orders already send <code>restaurantdelivery/status</code> and BYOC location. Because nothing calls <code>switch-fulfillment-type</code> any more, DaaS-courier orders look the same to Uber. Still, check one in staging: Uber has returned 400 "Cannot update status of this order type" before (DAAS-633).</p></div>
+      </div>
+    </section>
+
+    <section id="flow">
+      <h2><span class="n">02</span>Flow</h2>
+      <p class="sub">Green boxes are changed or new. Blue lines carry courier location. Location reaches tracker-service from two sources, and mp-uber reads only from tracker-service.</p>
+      <div class="scrollhint">Scroll sideways to follow the flow left to right →</div>
+      <div class="diagram arch">
+        <svg viewBox="0 0 1960 650" role="img" aria-label="Left to right. Algo registers every order with mp-uber through the gateway route /mp/uber/order/delivery, which replaces the switch, and sends order statuses through /mp/uber/order/status; mp-uber sends started and delivered to Uber Eats. When no store driver is free in time, Algo books daas-uber through the gateway route /api/v2/deliveries with marketplace=uber. daas-uber creates the Uber Direct delivery and receives webhooks. It sends callbacks back through the gateway's /callbacks route and the store callback queue to Algo, and posts courier locations to the new gateway route /marketplace/uber/locations. The gateway publishes them to the new RabbitMQ queue marketplace_courier_locations. tracker-service consumes the queue and stores the points in Redis for 24 hours, together with store-driver points from the Proxy. mp-uber pulls the locations from tracker-service and sends them to Uber Eats.">
+          <defs>
+            <marker id="a-ctl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-ctl"/></marker>
+            <marker id="a-loc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-loc"/></marker>
+          </defs>
+
+          <rect class="zone" x="20" y="40" width="240" height="590" rx="12"/><text class="zl" x="36" y="64">STORE · ON-PREM</text>
+          <rect class="zone" x="280" y="40" width="1380" height="590" rx="12"/><text class="zl" x="296" y="64">DAAS CLOUD · EMEA</text>
+          <rect class="zone" x="1680" y="40" width="260" height="590" rx="12"/><text class="zl" x="1696" y="64">UBER</text>
+
+          <!-- gateway with its routes -->
+          <rect class="bus" x="500" y="84" width="220" height="530" rx="10"/>
+          <text class="bt" x="610" y="110" text-anchor="middle">daas-gateway</text>
+          <text class="bs" x="610" y="126" text-anchor="middle">gateway-emea.daas.dts.ninja</text>
+          <g class="box"><rect x="512" y="135" width="196" height="30" rx="6"/><text class="bs" x="524" y="154">/api/v2/deliveries</text></g>
+          <g class="box"><rect x="512" y="280" width="196" height="30" rx="6"/><text class="bs" x="524" y="299">/callbacks/… (as today)</text></g>
+          <g class="box hl"><rect x="512" y="320" width="196" height="62" rx="6"/><text class="bs new" x="524" y="340">NEW /marketplace/</text><text class="bs new" x="524" y="355">uber/locations</text><text class="bs" x="524" y="372">publishes to RabbitMQ</text></g>
+          <g class="box"><rect x="512" y="505" width="196" height="30" rx="6"/><text class="bs" x="524" y="524">/mp/uber/order/status</text></g>
+          <g class="box hl"><rect x="512" y="450" width="196" height="30" rx="6"/><text class="bs new" x="524" y="469">/mp/uber/order/delivery</text></g>
+          <text class="bs" x="610" y="596" text-anchor="middle">order/delivery replaces order/switch</text>
+
+          <!-- 2 booking -->
+          <path class="e ctl" d="M240,150 L510,150" marker-end="url(#a-ctl)"/>
+          <path class="e ctl" d="M708,150 L778,150" marker-end="url(#a-ctl)"/>
+          <!-- 4 callbacks back to Algo -->
+          <path class="e ctl" d="M780,190 L735,190 L735,295 L710,295" marker-end="url(#a-ctl)"/>
+          <path class="e ctl" d="M512,295 L472,295" marker-end="url(#a-ctl)"/>
+          <path class="e ctl" d="M300,295 L242,295" marker-end="url(#a-ctl)"/>
+          <!-- 4 location post → 5 publish → consume -->
+          <path class="e loc" d="M780,230 L752,230 L752,330 L710,330" marker-end="url(#a-loc)"/>
+          <path class="e loc" d="M708,370 L1098,370" marker-end="url(#a-loc)"/>
+          <path class="e loc" d="M1320,370 L1398,370" marker-end="url(#a-loc)"/>
+          <path class="e loc" d="M1520,282 L1520,318" marker-end="url(#a-loc)"/>
+          <!-- Uber Direct -->
+          <path class="e ctl" d="M1020,150 L1698,150" marker-end="url(#a-ctl)"/>
+          <path class="e loc" d="M1700,205 L1022,205" marker-end="url(#a-loc)"/>
+          <!-- 1 create delivery (replaces switch) -->
+          <path class="e ctl" d="M240,465 L510,465" marker-end="url(#a-ctl)"/>
+          <path class="e ctl" d="M708,465 L778,465" marker-end="url(#a-ctl)"/>
+          <!-- 1 statuses -->
+          <path class="e ctl" d="M240,520 L510,520" marker-end="url(#a-ctl)"/>
+          <path class="e ctl" d="M708,520 L778,520" marker-end="url(#a-ctl)"/>
+          <path class="e ctl" d="M1020,538 L1698,538" marker-end="url(#a-ctl)"/>
+          <!-- 7 pull + send -->
+          <path class="e loc" d="M1460,442 L1460,500 L1022,500" marker-end="url(#a-loc)"/>
+          <path class="e loc" d="M1020,568 L1698,568" marker-end="url(#a-loc)"/>
+
+          <text class="ec" x="262" y="141">create delivery · marketplace=uber</text>
+          <text class="ec" x="262" y="456">create delivery · orders to pull</text>
+          <text class="ec" x="262" y="511">order/status · every order</text>
+          <text class="ec" x="1040" y="141">create delivery</text>
+          <text class="ec" x="1040" y="197">webhooks ~20 s · status + location</text>
+          <text class="ec" x="770" y="362">publish</text>
+          <text class="ec" x="1330" y="362">consume</text>
+          <text class="ec" x="1040" y="492">GET locations (via gateway /tracker)</text>
+          <text class="ec" x="1040" y="530">started · delivered</text>
+          <text class="ec" x="1040" y="560">BYOC location</text>
+
+          <g class="box"><rect x="40" y="110" width="200" height="450" rx="8"/><text class="bt" x="56" y="250">Algo backend</text><text class="bs" x="56" y="270">checkForMPOrder</text><text class="bs" x="56" y="292">store driver ≤ 30 min</text><text class="bs" x="56" y="308">  → store driver</text><text class="bs" x="56" y="326">else → daas-uber</text></g>
+          <g class="box"><rect x="300" y="270" width="170" height="50" rx="8"/><text class="bt" x="314" y="291">RabbitMQ</text><text class="bs" x="314" y="309">store callback queue</text></g>
+          <g class="box hl"><rect x="780" y="110" width="240" height="140" rx="8"/><text class="bt" x="796" y="138">daas-uber</text><text class="bs" x="796" y="158">uber-emea.daas.dts.ninja</text><text class="bs new" x="796" y="182">+ marketplace columns</text><text class="bs new" x="796" y="200">+ posts locations</text><text class="bs new" x="796" y="216">  (marketplace orders only)</text></g>
+          <g class="box hl"><rect x="1100" y="335" width="220" height="70" rx="8"/><text class="bt" x="1116" y="360">RabbitMQ · new queue</text><text class="bs new" x="1116" y="380">marketplace_courier_locations</text><text class="bs" x="1116" y="396">durable · DLQ · 15 min</text></g>
+          <g class="box"><rect x="1400" y="232" width="240" height="50" rx="8"/><text class="bt" x="1416" y="253">Proxy</text><text class="bs" x="1416" y="270">store-driver points, as today</text></g>
+          <g class="box hl"><rect x="1400" y="320" width="240" height="122" rx="8"/><text class="bt" x="1416" y="346">tracker-service</text><text class="bs new" x="1416" y="364">+ queue consumer</text><rect class="pill" x="1416" y="380" width="208" height="44" rx="12"/><text class="bs lc" x="1430" y="398">Redis · list per order</text><text class="bs lc" x="1430" y="414">TTL 24 h · same key all carriers</text></g>
+          <g class="box hl"><rect x="780" y="448" width="240" height="137" rx="8"/><text class="bt" x="796" y="488">mp-uber</text><text class="bs" x="796" y="508">doesn't know the carrier</text><text class="bs new" x="796" y="546">+ order/delivery → pull list</text><text class="bs new" x="796" y="564">+ location poller job</text></g>
+          <g class="box"><rect x="1700" y="110" width="220" height="140" rx="8"/><text class="bt" x="1716" y="138">Uber Direct</text><text class="bs" x="1716" y="158">delivery API</text><text class="bs" x="1716" y="176">courier_status</text><text class="bs" x="1716" y="192">delivery_status</text></g>
+          <g class="box"><rect x="1700" y="480" width="220" height="105" rx="8"/><text class="bt" x="1716" y="508">Uber Eats API</text><text class="bs" x="1716" y="528">restaurantdelivery/status</text><text class="bs" x="1716" y="546">byoc/…/event/location</text></g>
+
+          <g class="bd"><circle cx="743" cy="520" r="11"/><text x="743" y="524">1</text></g>
+          <g class="bd"><circle cx="743" cy="465" r="11"/><text x="743" y="469">1</text></g>
+          <g class="bd"><circle cx="1360" cy="538" r="11"/><text x="1360" y="542">1</text></g>
+          <g class="bd"><circle cx="743" cy="150" r="11"/><text x="743" y="154">2</text></g>
+          <g class="bd"><circle cx="780" cy="110" r="11"/><text x="780" y="114">3</text></g>
+          <g class="bd"><circle cx="1360" cy="205" r="11"/><text x="1360" y="209">4</text></g>
+          <g class="bd"><circle cx="752" cy="280" r="11"/><text x="752" y="284">4</text></g>
+          <g class="bd"><circle cx="900" cy="370" r="11"/><text x="900" y="374">5</text></g>
+          <g class="bd"><circle cx="1400" cy="320" r="11"/><text x="1400" y="324">6</text></g>
+          <g class="bd"><circle cx="1460" cy="472" r="11"/><text x="1460" y="476">7</text></g>
+          <g class="bd"><circle cx="1360" cy="568" r="11"/><text x="1360" y="572">7</text></g>
+        </svg>
+      </div>
+      <div class="legend"><span>statuses, bookings and callbacks</span><span class="lg-loc">courier location</span></div>
+
+      <div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  participant A as Algo
+  participant G as daas-gateway
+  participant M as mp-uber
+  participant UE as Uber Eats
+  participant DU as daas-uber
+  participant UD as Uber Direct
+  participant Q as RabbitMQ (new queue)
+  participant T as tracker-service
+  Note over A: checkForMPOrder picks the carrier
+  A->>G: 1. POST /mp/uber/order/delivery (replaces switch)
+  G->>M: proxy
+  M->>M: upsert row, pullLocations = true
+  A->>G: 1. POST /mp/uber/order/status NewOrderMakeline
+  G->>M: proxy
+  alt store driver free within 30 min
+    Note over A,T: store driver delivers, Proxy posts points to tracker (as today)
+  else no store driver in time
+    A->>G: 2. POST /api/v2/deliveries aggProvider=uber, marketplace=uber
+    G->>DU: POST /api/v1/deliveries/
+    DU->>UD: create delivery
+    DU->>DU: 3. algo_discovery.marketplace = uber
+    loop each webhook, about every 20 s
+      UD->>DU: 4. courier_status + location
+      DU->>G: /callbacks/... (unchanged)
+      G->>A: store callback queue
+      DU->>G: POST /marketplace/uber/locations
+      G-->>DU: 202
+      G->>Q: 5. publish marketplace_courier_locations
+      Q->>T: consume (manual ack)
+      T->>T: 6. RPUSH, LTRIM, EXPIRE 24 h
+    end
+  end
+  A->>G: 1. order/status EnRoute (pickup)
+  G->>M: proxy
+  M->>UE: restaurantdelivery/status started
+  loop mp-uber poller, every 10 s, each open order
+    M->>T: 7. GET locations (via gateway /tracker)
+    M->>UE: BYOC location (newest unsent point)
+  end
+  A->>G: 1. order/status Delivered
+  G->>M: proxy
+  M->>UE: restaurantdelivery/status delivered
+</pre>
+      </div>
+    </section>
+
+    <section id="steps">
+      <h2><span class="n">03</span>Step by step</h2>
+
+      <div class="step"><div class="badge">1</div><div class="body">
+        <h3>Algo registers the order and reports statuses <span class="chip new">create delivery replaces switch</span> <span class="chip keep">status call as today</span></h3>
+        <div class="route">Algo → daas-gateway → mp-uber · POST /mp/uber/order/delivery, then POST /mp/uber/order/status → Uber Eats</div>
+        <dl class="kv">
+          <dt>Decision</dt><dd><code>checkForMPOrder</code> <span class="ref">algo AggregatorsAPI.go:3139</span>. If a store driver is free within <code>MarketPlace.carrierThreshold</code> (30 min), the store carrier is used, as today. If not, the order goes to daas-uber (step 2).</dd>
+          <dt>Create delivery</dt><dd>Replaces the switch. In both branches Algo sends <code>POST /mp/uber/order/delivery</code> with the regular create-delivery body (the same <code>AggRequest</code> it sends to DaaS). mp-uber upserts its <code>marketplaceorderstatus</code> row with <code>pullLocations = true</code>. That row is the list the poller in step 7 reads. Nothing is sent to Uber Eats.</dd>
+          <dt>Statuses</dt><dd><code>NewOrderMakeline</code> when the carrier is chosen (mp-uber inserts its row), <code>EnRoute</code> at pickup, <code>Delivered</code> at the end. The calls are identical for both carriers. mp-uber maps them through <code>TriggerUpdatesOrderStatuses</code> (default <code>EnRoute,Delivered</code>) <span class="ref">mp-uber configuration.yaml:22</span>.</dd>
+          <dt>To Uber Eats</dt><dd><code>POST /eats/orders/{aggOrderId}/restaurantdelivery/status</code>. <code>started</code> for EnRoute and earlier, <code>delivered</code> for Delivered. Deduplicated for 30 min <span class="ref">uberMpEventsService.go:317-339</span>.</dd>
+          <dt>DaaS orders</dt><dd>Algo's order reaches EnRoute and Delivered from the daas-uber callbacks. <code>AutoEnrouteOnAggPickup</code> moves it to EnRoute on pickup <span class="ref">AggregatorsEvents.go:614</span>. Verify that Algo sends these MP status calls on any carrier's transition, not only for store drivers.</dd>
+          <dt>Retries</dt><dd><code>updateMarketPlaceWithDecision</code>: 6 attempts, backoff 1–16 s <span class="ref">:3289</span>.</dd>
+        </dl>
+      </div></div>
+
+      <div class="step"><div class="badge">2</div><div class="body">
+        <h3>Algo books daas-uber only <span class="chip new">changed</span></h3>
+        <div class="route">Algo → daas-gateway → daas-uber · POST /api/v2/deliveries → POST /api/v1/deliveries/</div>
+        <dl class="kv">
+          <dt>When</dt><dd>Only in the "no store driver in time" branch of <code>checkForMPOrder</code> <span class="ref">:3198</span>, which today calls the switch. The switch call there becomes the step 1 create delivery.</dd>
+          <dt>Why it's work</dt><dd>Algo does not pick the provider. In multi-DaaS, <code>ParseAggRequest</code> blanks <code>AggProvider</code> <span class="ref">:693</span>, and the provider comes from the gateway quote <span class="ref">:847-866</span>.</dd>
+          <dt>Mechanism</dt><dd>New <code>dispatchMPOrderToDaas</code> does three things. It sends the step 1 calls to mp-uber. It runs <code>ParseAggRequest</code> and sets <code>AggProvider="uber"</code> and <code>Marketplace=MapOfAggMPSources[source]</code> <span class="ref">FrontEndService.go:335</span>. It skips <code>SendQuote</code> and calls <code>SendDelivery</code>, then <code>sendDeliverySetCarrier</code>.</dd>
+          <dt>Gateway</dt><dd>With <code>aggProvider</code> set, <code>/api/v2/deliveries</code> must forward to that provider only. Verify <span class="ref">daas-gateway router.go:92-103</span>.</dd>
+          <dt>On failure</dt><dd>Fall back to the store carrier. mp-uber already has its row and doesn't notice the difference.</dd>
+        </dl>
+      </div></div>
+
+      <div class="step"><div class="badge">3</div><div class="body">
+        <h3>daas-uber marks the delivery <span class="chip new">changed</span></h3>
+        <dl class="kv">
+          <dt>Today</dt><dd><code>"marketplace"</code> is silently dropped. Neither <code>parsers.Order</code> <span class="ref">daas-uber parsers/v1.go:116</span> nor <code>algo.Delivery</code> <span class="ref">algo/deliveries.go:6</span> has the field.</dd>
+          <dt>Store</dt><dd>Migration <code>19.add_marketplace_to_algo_discovery.sql</code> adds <code>marketplace text NULL</code> and <code>marketplace_order_id text NULL</code> (= <code>altOrderId</code>).</dd>
+          <dt>Carry</dt><dd>The value has to pass through <code>V1.ToAlgoDelivery</code>, <code>OrderRequest</code>, <code>SaveOnce</code>, <code>GetOrderByAggID</code> and the DB fallback in <code>getAlgoDeliveryByAggID</code> <span class="ref">providers.go:165-193</span>.</dd>
+        </dl>
+      </div></div>
+
+      <div class="step"><div class="badge loc">4</div><div class="body">
+        <h3>daas-uber forwards locations <span class="chip keep">callbacks as today</span> <span class="chip loc">+ one POST</span></h3>
+        <dl class="kv">
+          <dt>Where</dt><dd><code>Uber()</code> <span class="ref">internal/server/providers.go:52-145</span>, after the existing gateway callback <span class="ref">:136</span>.</dd>
+          <dt>Condition</dt><dd><code>marketplace != ""</code> and a non-zero courier lat/lng.</dd>
+          <dt>Send</dt><dd>A goroutine POSTs to <code>{CallbackURL}/marketplace/uber/locations</code>, 3 s timeout, no retry. A failure is logged and doesn't affect the Algo callback.</dd>
+          <dt>Fix</dt><dd>Copy location whenever lat/lng exist, not only when a courier name or vehicle is set <span class="ref">providers/uber/delivery.go:372-381</span>.</dd>
+        </dl>
+      </div></div>
+
+      <div class="step"><div class="badge loc">5</div><div class="body">
+        <h3>Gateway publishes to RabbitMQ, tracker-service consumes <span class="chip new">new route + queue</span></h3>
+        <div class="route">daas-uber → daas-gateway → RabbitMQ marketplace_courier_locations → tracker-service</div>
+        <dl class="kv">
+          <dt>Route</dt><dd><code>POST /marketplace/{provider}/locations</code>, outside the <code>/mp/*</code> reverse proxy <span class="ref">router.go:148-160</span>.</dd>
+          <dt>Publish</dt><dd><code>SendMessage</code> to <code>marketplace_courier_locations</code> <span class="ref">pkg/queue/client.go:252</span>: durable, persistent, default exchange, DLQ <code>…_DLQ</code>, 15 min expiry, reply 202.</dd>
+          <dt>Config</dt><dd><code>[queue] marketplaceLocationsQueue</code> <span class="ref">config/queue.go</span>, set by <code>DT_QUEUE_MARKETPLACELOCATIONSQUEUE</code>.</dd>
+          <dt>Replace</dt><dd>The <code>/mp/{provider}/order/switch</code> route becomes <code>/mp/{provider}/order/delivery</code>, through the same <code>MarketplaceProxy</code> <span class="ref">router.go:153-155</span>.</dd>
+        </dl>
+      </div></div>
+
+      <div class="step"><div class="badge loc">6</div><div class="body">
+        <h3>tracker-service stores the points <span class="chip new">new consumer</span></h3>
+        <dl class="kv">
+          <dt>Consumer</dt><dd>New <code>amqp091-go</code> consumer on <code>marketplace_courier_locations</code>: prefetch 50, manual ack, nack without requeue on bad JSON (to the DLQ), reconnect loop.</dd>
+          <dt>Same key</dt><dd>It writes with the existing list write <span class="ref">ordersRepository.go:404-431</span> to <code>tr-svc:market:{m}:store:{s}:posorder:{o}:locations</code>. That is the key store-driver points from the Proxy (<code>POST /events/location</code>) already use, so readers see one list per order whatever the carrier.</dd>
+          <dt>TTL</dt><dd>24 h, refreshed on every write. That is already the <code>orderLocations</code> setting <span class="ref">configuration.yaml:55-58</span>.</dd>
+          <dt>Limit</dt><dd>Trimmed to <code>REDIS_MAX_LOCATIONS_PER_ORDER</code> = 100 today <span class="ref">configuration.yaml:53</span> (see 09).</dd>
+        </dl>
+      </div></div>
+
+      <div class="step"><div class="badge loc">7</div><div class="body">
+        <h3>mp-uber pulls and sends <span class="chip new">poller replaces push</span></h3>
+        <dl class="kv">
+          <dt>Today</dt><dd>mp-uber subscribes to tracker v2 on <code>NewOrderMakeline</code> and receives pushes on <code>/mp/uber/order/events</code> <span class="ref">trackerV2Service.go:30-80</span>.</dd>
+          <dt>Job</dt><dd>New <code>jobs/pullLocationsJob.go</code>, registered like <code>loadExternalStoreIdsJob</code> <span class="ref">configuration/dependenciesConfig.go:36</span>, runs every <code>JOB_PULL_LOCATIONS_INTERVAL</code> (default 10 s).</dd>
+          <dt>Per order</dt><dd>Applies to every row with <code>pullLocations = true</code> (set by create delivery) and status <code>received</code> or <code>started</code>, updated within 24 h. No carrier check. It reads <code>GET {GATEWAY_URL}/tracker/stores/{storeNo}/orders/{orderId}/locations</code>, keeps points newer than <code>lastLocationTs</code>, and sends the newest to <code>processLocationEvents</code> <span class="ref">uberMpEventsService.go:197</span>.</dd>
+          <dt>Gate</dt><dd>Locations go out only after <code>started</code>, which step 1 sets on EnRoute <span class="ref">:162</span>.</dd>
+          <dt>Store id</dt><dd><code>externalStoreId</code> comes from <code>StoresConfigurationMap</code> <span class="ref">trackerV2Service.go:31</span>.</dd>
+        </dl>
+      </div></div>
+    </section>
+
+    <section id="contracts">
+      <h2><span class="n">04</span>Contracts</h2>
+      <p class="sub">Bold lines are new. Field names follow each service's existing payloads.</p>
+      <div class="cols">
+        <div class="panel"><h4>1 · Algo → mp-uber status (unchanged)</h4>
+<pre class="code">POST {gateway}/mp/uber/order/status
+{
+  "aggOrderId": "d3b93b60-c336-4b32-87e6-bed8eb0c2cab",
+  "brand": "Pizza Hut:GH Pizza LTD",
+  "country": "United Kingdom",
+  "storeNo": "7507",
+  "orderId": "26101402978",
+  "orderStatus": "NewOrderMakeline" <i>| "EnRoute" | "Delivered"</i>
+}
+<i>→ Uber Eats</i>
+POST /eats/orders/{aggOrderId}/restaurantdelivery/status
+{ "status": "started" <i>| "delivered"</i> }</pre></div>
+        <div class="panel"><h4>1 · Algo → mp-uber create delivery (replaces switch)</h4>
+<pre class="code"><b>POST {gateway}/mp/uber/order/delivery</b>
+{
+  "brand": "Pizza Hut:GH Pizza LTD-United Kingdom",
+  "storeId": "7507",
+  "targets": [{ "details": {
+    "id": "26101402978",
+    "altOrderId": "d3b93b60-c336-4b32-87e6-bed8eb0c2cab"
+  }}],
+  "marketplace": "uber"
+}
+<i>→ 201 · mp-uber row: pullLocations = true</i>
+<i>no call to Uber Eats</i></pre></div>
+        <div class="panel"><h4>2 · Algo → daas-uber (excerpt)</h4>
+<pre class="code">POST {gateway}/api/v2/deliveries
+{
+<b>  "aggProvider": "uber",</b>
+  "storeId": "7507",
+  "brand": "Pizza Hut:GH Pizza LTD-United Kingdom",
+  "targets": [{ "details": {
+    "id": "26101402978",
+    "altOrderId": "d3b93b60-c336-4b32-87e6-bed8eb0c2cab"
+  }}],
+<b>  "marketplace": "uber"</b>
+}</pre></div>
+        <div class="panel"><h4>4 → 5 · daas-uber → gateway → queue</h4>
+<pre class="code"><b>POST {gateway}/marketplace/uber/locations</b>
+<b>queue marketplace_courier_locations (same body)</b>
+{
+  "marketplace": "uber",
+  "brand": "Pizza Hut",
+  "franchisee": "GH Pizza LTD",
+  "country": "United Kingdom",
+  "storeNo": "7507",
+  "orderId": "26101402978",
+  "deliveryId": "del_UowjW4AJTSGDNwqOOFCwCg",
+  "lat": 51.913002,
+  "lng": -0.20857728,
+  "timestamp": 1791975067000
+}
+<i>→ 202 Accepted</i></pre></div>
+        <div class="panel"><h4>6 · Redis · 7 · read and send</h4>
+<pre class="code"><i>key (shared with store-driver points)</i>
+tr-svc:market:ph-uk:store:7507:posorder:26101402978:locations
+<i>value (LocationDto)</i>
+{"lat":51.913002,"lng":-0.20857728,"timestamp":1791975067000}
+<i>TTL</i> 86400 s, refreshed on every write
+
+GET {gateway}/tracker/stores/7507/orders/26101402978/locations
+
+<i>→ Uber Eats</i>
+POST /eats/byoc/restaurants/orders/event/location
+{ "location_request": { "order_workflow_uuid": aggOrderId,
+  "restaurant_uuid": externalStoreId, "location_events": [ … ] } }</pre></div>
+      </div>
+    </section>
+
+    <section id="statuses">
+      <h2><span class="n">05</span>Statuses</h2>
+      <p class="sub">Uber Eats gets the same two statuses whichever carrier delivers. For a DaaS courier, they come from the daas-uber callbacks through Algo <span class="ref">daas-uber providers/uber/delivery.go:414-439</span>.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Uber Direct</th><th>Algo target / courier</th><th>Algo order</th><th>mp-uber call</th><th>Uber Eats</th><th>Location to tracker</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">pending</td><td class="mono">1 Scheduled / 0</td><td>–</td><td>– (NewOrderMakeline already sent)</td><td>–</td><td>no</td></tr>
+          <tr><td class="mono">pickup</td><td class="mono">2 Assigned / 2 · 3</td><td>–</td><td>–</td><td>–</td><td>yes</td></tr>
+          <tr><td class="mono">pickup_complete</td><td class="mono">2 Assigned / 3 ArrivedAtStore</td><td>–</td><td>–</td><td>–</td><td>yes</td></tr>
+          <tr><td class="mono">dropoff</td><td class="mono">3 PickedUp / 5 · 8</td><td>EnRoute (auto)</td><td class="mono">EnRoute</td><td class="mono">started</td><td>yes</td></tr>
+          <tr><td class="mono">delivered</td><td class="mono">4 Delivered / 7</td><td>Delivered</td><td class="mono">Delivered</td><td class="mono">delivered</td><td>no</td></tr>
+          <tr><td class="mono">canceled · returned</td><td class="mono">5 · 6</td><td>back to dispatch</td><td>–</td><td>–</td><td>no</td></tr>
+        </tbody>
+      </table></div>
+      <p class="note">PickedUp (target status 3) arrives only with <code>dropoff</code>, so for a DaaS courier <code>started</code> is sent when the courier leaves the store. Points from the pickup leg are stored but not sent, because the gate in step 7 is closed until then.</p>
+    </section>
+
+    <section id="repos">
+      <h2><span class="n">06</span>Work per repo</h2>
+
+      <div class="panel repo"><header><h3>algo</h3><span class="chip decide">medium</span><span class="path">~/dragontail/algo</span></header>
+        <ul class="tasks">
+          <li><span>Replace <code>switchOrderToMPCarrier</code> with <code>createMPDelivery</code>, called in both branches of <code>checkForMPOrder</code>. Point <code>SwitchOrderToMPPath</code> at <code>/mp/{MPAggName}/order/delivery</code> and send the regular <code>AggRequest</code> instead of <code>SwitchOrder</code>. <span class="ref">AggregatorsAPI.go:190, :3212 · constValues.go:389</span></span></li>
+          <li class="del"><span>Delete <code>SwitchOrder</code>, the unused <code>PostUpdateSwitch</code>, the <code>MPSwitchFailedThenStay</code> flag and the <code>UpdateOrderSaleType(CarryOut)</code> call. <span class="ref">:3246 · constValues.go:401</span></span></li>
+          <li><span>Add <code>dispatchMPOrderToDaas</code> (step 2) and call it from the "too far" branch. <span class="ref">:3198</span></span></li>
+          <li><span>Add <code>Marketplace</code> with <code>json:"marketplace,omitempty"</code> to <code>AggRequest</code>. <span class="ref">:~302</span></span></li>
+          <li><span>Keep the Uber Eats <code>aggOrderId</code> in <code>SetOrderAggCarrierId</code>, and don't overwrite it with the daas-uber delivery id. <span class="ref">:2111</span></span></li>
+          <li><span>Turn on <code>Dispatch/AutoEnrouteOnAggPickup</code> for the pilot stores. <span class="ref">:2383</span></span></li>
+          <li><span>Check that the EnRoute and Delivered MP status calls fire for orders delivered by a DaaS carrier.</span></li>
+          <li><span>Fix in <code>updateMarketPlaceWithDecision</code>: check the <code>http.NewRequest</code> error first, and treat <code>io.EOF</code> with a nil response as a failure. <span class="ref">:3300-3324</span></span></li>
+        </ul></div>
+
+      <div class="panel repo"><header><h3>daas-uber</h3><span class="chip decide">medium</span><span class="path">~/dragontail/daas-uber</span></header>
+        <ul class="tasks">
+          <li><span>Add <code>Marketplace</code> to <code>parsers.Order</code> and <code>algo.Delivery</code>, and map it in <code>V1.ToAlgoDelivery</code>. <span class="ref">parsers/v1.go:35,116 · algo/deliveries.go:6</span></span></li>
+          <li><span>Add migration <code>19.add_marketplace_to_algo_discovery.sql</code>.</span></li>
+          <li><span>Add the columns to <code>OrderRequest</code>, <code>SaveOnce</code>, <code>GetOrderByAggID</code> and the <code>getAlgoDeliveryByAggID</code> fallback. <span class="ref">algo/repository.go:21,55,100 · providers.go:165</span></span></li>
+          <li><span>Add <code>SendMarketplaceLocation</code> in <code>gatewayAPI.go</code>, and call it with <code>go</code> after the callback in <code>Uber()</code>. <span class="ref">providers.go:136</span></span></li>
+          <li><span>Copy courier lat/lng whenever present. <span class="ref">delivery.go:372</span></span></li>
+          <li><span>Call the existing <code>Uber.AuthWebhook</code> signature check in <code>Uber()</code>. <span class="ref">providers/uber/auth.go:17</span></span></li>
+        </ul></div>
+
+      <div class="panel repo"><header><h3>daas-gateway</h3><span class="chip ready">small</span><span class="path">~/dragontail/daas-gateway</span></header>
+        <ul class="tasks">
+          <li><span>Add the <code>MarketplaceLocation</code> handler, modelled on <code>callback.go:59-110</code>: validate, <code>SendMessage</code>, reply 202.</span></li>
+          <li><span>Register <code>POST /marketplace/{provider}/locations</code> and add <code>MarketplaceLocationsQueue</code> to <code>config/queue.go</code>.</span></li>
+          <li><span>Rename <code>/mp/{provider}/order/switch</code> to <code>/mp/{provider}/order/delivery</code> in <code>MakeMpProxyHandler</code>. <span class="ref">router.go:153-155</span></span></li>
+          <li><span>Confirm <code>/api/v2/deliveries</code> honours <code>aggProvider</code> with no fan-out.</span></li>
+          <li><span>Add a handler test with <code>httptest</code> and a buffered <code>messages</code> channel.</span></li>
+        </ul></div>
+
+      <div class="panel repo"><header><h3>tracker-service</h3><span class="chip decide">medium</span><span class="path">~/dragontail/tracker-service</span></header>
+        <ul class="tasks">
+          <li><span>Add <code>amqp091-go</code> and <code>consumers/marketplaceLocations.go</code>, started from <code>StartUp()</code> behind <code>RABBITMQ_ENABLED</code>. <span class="ref">configuration/startup.go:115</span></span></li>
+          <li><span>Map brand+country to market, then write a <code>LocationDto</code> with the existing repository call (same key as Proxy points). <span class="ref">ordersRepository.go:404</span></span></li>
+          <li><span>Add RabbitMQ settings to <code>configuration.yaml</code>, and set <code>REDIS_MAX_LOCATIONS_PER_ORDER</code>.</span></li>
+          <li><span>Align the Dockerfile Go version with <code>go.mod</code> (1.23.4 vs 1.25).</span></li>
+          <li><span>Add a testify suite with <code>redismock</code>: valid message, bad JSON, unknown market.</span></li>
+        </ul></div>
+
+      <div class="panel repo"><header><h3>mp-uber</h3><span class="chip decide">medium</span><span class="path">~/dragontail/mp-uber</span></header>
+        <ul class="tasks">
+          <li><span>Replace <code>POST order/switch</code> (role <code>algo</code>) with <code>POST order/delivery</code>. It parses the create-delivery body and upserts the row with <code>pullLocations = true</code>. No Uber Eats call. <span class="ref">controllers/…EventsController.go:65</span></span></li>
+          <li class="del"><span>Delete <code>SwitchToUberDelivery</code>, <code>SwitchToUberDeliveryRequest</code>, the switch DTO and <code>DELIVERY_BY_UBER</code>. <span class="ref">uberMpEventsService.go:172-195 · types/types.go:25 · types/mpDtos.go:36 · types/consts.go:41</span></span></li>
+          <li><span>Add migration: <code>pullLocations boolean NOT NULL DEFAULT false</code> and <code>lastLocationTs bigint NULL</code> on <code>marketplaceorderstatus</code>.</span></li>
+          <li><span>Add <code>jobs/pullLocationsJob.go</code> with its <code>configuration.yaml</code> entry and <code>JOB_PULL_LOCATIONS_INTERVAL</code>.</span></li>
+          <li><span>Resolve <code>externalStoreId</code> from <code>StoresConfigurationMap</code> in the poller.</span></li>
+          <li class="del"><span>Once the poller is live, remove the tracker v2 subscription and <code>POST order/events</code> so no point is sent twice. <span class="ref">uberMpEventsService.go:99-116</span></span></li>
+        </ul></div>
+    </section>
+
+    <section id="failures">
+      <h2><span class="n">07</span>Failure handling</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>What fails</th><th>Effect</th><th>Handling</th></tr></thead>
+        <tbody>
+          <tr><td class="who">Create delivery (1)</td><td>mp-uber never pulls this order's locations</td><td>6 retries through <code>updateMarketPlaceWithDecision</code>. Statuses still reach Uber Eats.</td></tr>
+          <tr><td class="who">NewOrderMakeline (1)</td><td>mp-uber has no row, so no status or location reaches Uber Eats</td><td>6 retries. mp-uber also inserts the row if the first call it sees is EnRoute.</td></tr>
+          <tr><td class="who">daas-uber booking (2)</td><td>No courier</td><td>Store carrier delivers. Uber Eats sees no difference, because nothing was promised.</td></tr>
+          <tr><td class="who">Location POST (4)</td><td>One point lost</td><td>Logged. The next webhook arrives in about 20 s.</td></tr>
+          <tr><td class="who">Queue or tracker down (5, 6)</td><td>Points wait</td><td>The queue is durable and messages expire after 15 min. The gateway buffers 2000 in memory <span class="ref">server.go:98</span>.</td></tr>
+          <tr><td class="who">Poller or Uber Eats (7)</td><td>Position lags</td><td>The next tick retries from <code>lastLocationTs</code>. Only the newest point is sent.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="rollout">
+      <h2><span class="n">08</span>Rollout and tests</h2>
+      <div class="cols">
+        <div class="panel"><h4>Order of release</h4>
+          <ul class="tasks">
+            <li><span>Provision Redis and the queue in EMEA. Deploy tracker-service with the consumer.</span></li>
+            <li><span>Deploy daas-gateway with the new location route and <code>/mp/{provider}/order/delivery</code>. Keep the switch route until algo is released.</span></li>
+            <li><span>Deploy daas-uber with the migration. It only acts when <code>marketplace</code> is set.</span></li>
+            <li><span>Deploy the mp-uber poller and run it alongside the push subscription with sending off. Compare points, then switch.</span></li>
+            <li><span>Deploy algo with the switch replaced by create delivery. Pilot one store through <code>Aggregators/MPSources</code>.</span></li>
+            <li><span>Remove the old switch route and code, and the push subscription.</span></li>
+          </ul></div>
+        <div class="panel"><h4>End-to-end check (staging)</h4>
+          <ul class="tasks">
+            <li><span>A store-driver order: status and location reach Uber Eats from the poller.</span></li>
+            <li><span>A DaaS order: the <code>algo_discovery</code> row has <code>marketplace='uber'</code>.</span></li>
+            <li><span>Each webhook gives one Algo callback and one location POST, both 202.</span></li>
+            <li><span>The Redis key grows and its <code>TTL</code> is about 86400.</span></li>
+            <li><span><code>started</code> on pickup, then locations, then <code>delivered</code>.</span></li>
+            <li><span>A normal daas-uber delivery sends no location POST.</span></li>
+          </ul></div>
+      </div>
+    </section>
+
+    <section id="decisions">
+      <h2><span class="n">09</span>Open decisions</h2>
+      <div class="cols">
+        <div class="panel stripe decide"><span class="chip decide">decide</span><h3>Market in tracker</h3><p>The Redis key needs a market (<code>ph-uk</code>), but the message has brand and country. <b>Recommendation:</b> map brand+country to market in tracker config, with <code>DEFAULT_MARKET</code> as the fallback.</p></div>
+        <div class="panel stripe decide"><span class="chip decide">decide</span><h3>"All" locations</h3><p>The list is capped at 100 points today. <b>Recommendation:</b> 360 points (2 h at 20 s), with TTL 24 h.</p></div>
+        <div class="panel stripe decide"><span class="chip decide">decide</span><h3>Auth on the new route</h3><p>Callbacks and <code>/mp/*</code> have no auth, and the JWT <code>Authenticator</code> is never mounted <span class="ref">daas-gateway api/middleware/authenticator.go:14</span>. <b>Recommendation:</b> match callbacks for the pilot, then add service JWT.</p></div>
+        <div class="panel stripe decide"><span class="chip decide">decide</span><h3>Pull for every order</h3><p>Moving store-driver orders from push to pull touches live UK traffic. <b>Recommendation:</b> run both side by side for a week (step 4 of the rollout) before removing push.</p></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script>
+(function(){
+  var dark=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;
+  mermaid.initialize({startOnLoad:true,securityLevel:'strict',theme:dark?'dark':'neutral',sequence:{useMaxWidth:false}});
+})();
+</script>
+</body></html>
