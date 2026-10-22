@@ -149,7 +149,7 @@ pre.code i{color:var(--muted);font-style:normal}
       <div class="eyebrow">Technical spec · v6 · ph-uk (EMEA)</div>
       <h1>Uber Marketplace Flow</h1>
       <p class="lede">The switch is replaced by the existing <code>NewOrderMakeline</code> call, which makes mp-uber subscribe to the order in tracker-service. Nothing polls. An Uber Eats order is always delivered by us, either by a store driver or, when none is free in time, by a daas-uber courier. Uber Eats only receives order statuses and courier locations. mp-uber sends both the same way for every order and never knows which kind of carrier delivered it.</p>
-      <div class="meta"><span>revised 2026-10-22</span><span><a href="https://github.com/Avielpo3/uber-marketplace-flow/blob/main/SPEC.md">SPEC.md</a> (full written spec)</span><span>repos: algo · daas-uber · daas-gateway · tracker-service · mp-uber</span><span>file:line refs checked against local checkouts</span></div>
+      <div class="meta"><span>revised 2026-10-22</span><span><a href="https://github.com/Avielpo3/uber-marketplace-flow/blob/main/SPEC.md">SPEC.md</a> (full written spec)</span><span>scope: daas-uber · daas-gateway · tracker-service · mp-uber (Algo is ALGO-2532)</span><span>Jira: <a href="https://dragontailsystems.atlassian.net/browse/DAAS-634">DAAS-634</a></span><span>file:line refs checked against local checkouts</span></div>
       <div class="cols3">
         <div class="panel stat"><b>Switch replaced</b><p><code>/order/switch</code> is replaced by the existing <code>NewOrderMakeline</code> status call, which registers the order in mp-uber and creates its tracker subscription. Nothing calls <code>switch-fulfillment-type</code> any more, so the order stays a restaurant delivery (BYOC).</p></div>
         <div class="panel stat"><b>mp-uber doesn't know the carrier</b><p>Statuses come from Algo and from tracker order events. Locations arrive through the existing tracker subscription push, under the same Redis key for store drivers and DaaS couriers.</p></div>
@@ -474,16 +474,12 @@ POST /eats/byoc/restaurants/orders/event/location
     <section id="repos">
       <h2><span class="n">06</span>Work per repo</h2>
 
-      <div class="panel repo"><header><h3>algo</h3><span class="chip decide">medium</span><span class="path">~/dragontail/algo</span></header>
+      <div class="panel repo stripe"><header><h3>algo</h3><span class="chip keep">out of scope · ALGO-2532</span></header>
+        <p>Algo is implemented under <a href="https://dragontailsystems.atlassian.net/browse/ALGO-2532">ALGO-2532</a>. This page doesn't plan Algo tasks. The DaaS side relies on Algo for these:</p>
         <ul class="tasks">
-          <li><span>Replace <code>switchOrderToMPCarrier</code> with the <code>NewOrderMakeline</code> status call that <code>stayWithStoreCarrier</code> already sends <span class="ref">AggregatorsAPI.go:3250</span>, so both branches of <code>checkForMPOrder</code> send the same single call.</span></li>
-          <li class="del"><span>Delete <code>switchOrderToMPCarrier</code>, <code>SwitchOrder</code>, <code>SwitchOrderToMPPath</code>, the unused <code>PostUpdateSwitch</code>, the <code>MPSwitchFailedThenStay</code> flag and the <code>UpdateOrderSaleType(CarryOut)</code> call. <span class="ref">:190, :3212, :3246 · constValues.go:389, :401</span></span></li>
-          <li><span>Add <code>dispatchMPOrderToDaas</code> (step 2) and call it from the "too far" branch. <span class="ref">:3198</span></span></li>
-          <li><span>Add <code>Marketplace</code> with <code>json:"marketplace,omitempty"</code> to <code>AggRequest</code>. <span class="ref">:~302</span></span></li>
-          <li><span>Keep the Uber Eats <code>aggOrderId</code> in <code>SetOrderAggCarrierId</code>, and don't overwrite it with the daas-uber delivery id. <span class="ref">:2111</span></span></li>
-          <li><span>Turn on <code>Dispatch/AutoEnrouteOnAggPickup</code> for the pilot stores. <span class="ref">:2383</span></span></li>
-          <li><span>Check that the EnRoute and Delivered MP status calls fire for orders delivered by a DaaS carrier.</span></li>
-          <li><span>Fix in <code>updateMarketPlaceWithDecision</code>: check the <code>http.NewRequest</code> error first, and treat <code>io.EOF</code> with a nil response as a failure. <span class="ref">:3300-3324</span></span></li>
+          <li><span><code>NewOrderMakeline</code> to <code>/mp/uber/order/status</code> for every marketplace order, and no <code>/order/switch</code> call.</span></li>
+          <li><span>Create delivery with <code>aggProvider: "uber"</code>, <code>marketplace: "uber"</code> and the Uber Eats id in <code>altOrderId</code>.</span></li>
+          <li><span><code>EnRoute</code> and <code>Delivered</code> for DaaS-delivered orders. The order stays a delivery, and the Uber Eats <code>aggOrderId</code> is kept.</span></li>
         </ul></div>
 
       <div class="panel repo"><header><h3>daas-uber</h3><span class="chip decide">medium</span><span class="path">~/dragontail/daas-uber</span></header>
@@ -544,10 +540,10 @@ POST /eats/byoc/restaurants/orders/event/location
         <div class="panel"><h4>Order of release</h4>
           <ul class="tasks">
             <li><span>DevOps (separate ticket): provision Redis and the queue in EMEA, and deploy tracker-service with the consumer.</span></li>
-            <li><span>Deploy daas-gateway with the new callbacks route. Keep the switch route until algo is released.</span></li>
+            <li><span>Deploy daas-gateway with the new callbacks route. Keep the switch route until ALGO-2532 is released.</span></li>
             <li><span>Deploy daas-uber with the migration. It only acts when <code>marketplace</code> is set.</span></li>
             <li><span>Deploy mp-uber with the order-event mapping. The subscription is unchanged.</span></li>
-            <li><span>Deploy algo with the switch replaced by <code>NewOrderMakeline</code>. Pilot one store through <code>Aggregators/MPSources</code>.</span></li>
+            <li><span>(Out of scope, ALGO-2532) Algo release with the switch replaced by <code>NewOrderMakeline</code>, piloted on one store. The DaaS side must be live first.</span></li>
             <li><span>Remove the old switch route and code.</span></li>
           </ul></div>
         <div class="panel"><h4>End-to-end check (staging)</h4>
