@@ -2,7 +2,9 @@
 
 - **Version:** v6, 2026-10-22
 - **Market:** ph-uk (EMEA)
-- **Repos:** `algo`, `daas-uber`, `daas-gateway`, `tracker-service`, `mp-uber`
+- **Scope:** DaaS side only. Repos: `daas-uber`, `daas-gateway`, `tracker-service`, `mp-uber`, plus the DevOps infra task.
+- **Out of scope:** all Algo implementation. It belongs to [ALGO-2532](https://dragontailsystems.atlassian.net/browse/ALGO-2532). This spec only states what the DaaS side expects from Algo (§8.0).
+- **Jira:** epic [DAAS-634](https://dragontailsystems.atlassian.net/browse/DAAS-634) (relates to ALGO-2532). Stories DAAS-635 (daas-uber), DAAS-636 (daas-gateway), DAAS-637 (tracker-service), DAAS-638 (mp-uber). Infra task DAAS-639 (DevOps, blocks DAAS-637).
 - **Visual version:** https://avielpo3.github.io/uber-marketplace-flow/
 - **Status:** design agreed, ready for an implementation plan. Open items are in §11. In-scope items have an owner, and out-of-scope items are marked as such.
 
@@ -29,6 +31,7 @@ mp-uber does not know which kind of carrier delivers an order, a store driver or
 4. Every call between services goes through daas-gateway.
 
 **Non-goals (out of scope)**
+- **Any change in the `algo` repo.** It is implemented under ALGO-2532. Algo appears here only as the caller whose behaviour the DaaS side relies on (§8.0). Do not plan Algo tasks from this spec.
 - Handling Uber Direct `canceled` / `returned` after the order is registered (§11, O-4).
 - Enforcing the Uber Direct webhook signature (`Uber.AuthWebhook`) (§11, O-5).
 - Auth on the new gateway route beyond what `/callbacks` has today (pilot decision D-11).
@@ -48,15 +51,15 @@ mp-uber does not know which kind of carrier delivers an order, a store driver or
 
 ## 4. Decisions
 
-Each decision is final unless §11 says otherwise.
+Each decision is final unless §11 says otherwise. Decisions marked **[Algo: ALGO-2532]** need Algo work, which is out of scope here. In this spec they only define the contract the DaaS side relies on.
 
 | ID | Decision |
 |---|---|
-| D-1 | **The switch is removed.** Nothing calls Uber Eats `switch-fulfillment-type` (`DELIVERY_BY_UBER`). `/mp/{provider}/order/switch` is deleted in algo, daas-gateway and mp-uber. The order keeps SaleType = delivery, so remove Algo's `UpdateOrderSaleType(CarryOut)`. |
-| D-2 | **One call to mp-uber to register the order: `NewOrderMakeline`.** The switch, the proposed create-delivery call and `NewOrderMakeline` are merged into the existing `POST /mp/uber/order/status` with `orderStatus: "NewOrderMakeline"`. It is sent in **both** branches (store driver and DaaS). No new mp-uber endpoint. |
-| D-3 | **Carrier choice is unchanged.** `checkForMPOrder`: if a store driver is free within `MarketPlace.carrierThreshold` (30 min), the store driver delivers. Otherwise Algo books daas-uber. |
-| D-4 | **daas-uber only.** For marketplace orders Algo sets `aggProvider: "uber"`, skips the quote and calls create delivery. **The gateway honours `aggProvider`** and forwards to that provider only, with no fan-out. |
-| D-5 | **The `marketplace` field.** Algo adds `"marketplace": "uber"` to the create-delivery JSON. daas-uber stores it in `algo_discovery` (`marketplace`, `marketplace_order_id` = `altOrderId`). |
+| D-1 | **The switch is removed.** Nothing calls Uber Eats `switch-fulfillment-type` (`DELIVERY_BY_UBER`). DaaS side: `/mp/{provider}/order/switch` is deleted in daas-gateway and mp-uber. **[Algo: ALGO-2532]** Algo stops calling the switch and keeps the order as a delivery. |
+| D-2 | **One call to mp-uber to register the order: `NewOrderMakeline`.** The switch, the proposed create-delivery call and `NewOrderMakeline` are merged into the existing `POST /mp/uber/order/status` with `orderStatus: "NewOrderMakeline"`. It is sent in **both** branches (store driver and DaaS). No new mp-uber endpoint. **[Algo: ALGO-2532]** |
+| D-3 | **Carrier choice is unchanged.** If a store driver is free within 30 min, the store driver delivers. Otherwise Algo books daas-uber. **[Algo: ALGO-2532]** |
+| D-4 | **daas-uber only.** **[Algo: ALGO-2532]** For marketplace orders Algo sends create delivery with `aggProvider: "uber"`. DaaS side: **the gateway honours `aggProvider`** and forwards to that provider only, with no fan-out. |
+| D-5 | **The `marketplace` field.** **[Algo: ALGO-2532]** Algo adds `"marketplace": "uber"` to the create-delivery JSON. DaaS side: daas-uber stores it in `algo_discovery` (`marketplace`, `marketplace_order_id` = `altOrderId`). |
 | D-6 | **All marketplace callbacks are forwarded.** For a marketplace delivery, daas-uber sends **every** Uber Direct callback (every status, with or without a location) to the new gateway route. The existing callback to Algo (`/callbacks/…`) is unchanged and still sent first. |
 | D-7 | **New gateway route `POST /marketplace/{provider}/callbacks`** (`/marketplace/uber/callbacks`). It replaces the earlier locations-only idea. It sits outside the `/mp/*` reverse proxy. |
 | D-8 | **New RabbitMQ queue `marketplace_callbacks`**, between daas-gateway (publisher) and tracker-service (consumer). It is durable and persistent, uses the default exchange, has DLQ `marketplace_callbacks_DLQ`, and messages expire after 15 minutes. |
@@ -84,8 +87,8 @@ Proxy (store-driver app) ──/events/location (as today)──▶ tracker-serv
 
 ### Steps
 
-1. **Algo registers the order.** `checkForMPOrder` (`algo AggregatorsAPI.go:3139`) picks the carrier (D-3) and sends `NewOrderMakeline` in both branches (D-2). mp-uber inserts its `marketplaceorderstatus` row as `received` and creates the tracker subscription (`SubscribeToLocationsOnStatus = NewOrderMakeline`, `mp-uber configuration.yaml:23`, `uberMpEventsService.go:42, :99-116`). Later, Algo sends `EnRoute` and `Delivered` as today. mp-uber turns these into Uber Eats statuses through `TriggerUpdatesOrderStatuses` (default `EnRoute,Delivered`, `mp-uber configuration.yaml:22`). Algo's retries are 6 attempts with backoff 1–16 s (`updateMarketPlaceWithDecision`, `AggregatorsAPI.go:3289`).
-2. **Algo books daas-uber only** (store driver too far). See D-4 and D-5. If the booking fails, the store driver delivers. mp-uber is not affected, because nothing was promised to Uber Eats.
+1. **Algo registers the order** (Algo side is ALGO-2532, out of scope). Algo picks the carrier (D-3) and sends `NewOrderMakeline` in both branches (D-2). DaaS side: mp-uber inserts its `marketplaceorderstatus` row as `received` and creates the tracker subscription (`SubscribeToLocationsOnStatus = NewOrderMakeline`, `mp-uber configuration.yaml:23`, `uberMpEventsService.go:42, :99-116`). Later, Algo sends `EnRoute` and `Delivered` as today. mp-uber turns these into Uber Eats statuses through `TriggerUpdatesOrderStatuses` (default `EnRoute,Delivered`, `mp-uber configuration.yaml:22`).
+2. **Algo books daas-uber only** when the store driver is too far (ALGO-2532, out of scope). See D-4 and D-5. DaaS side: the gateway forwards it only to daas-uber. If the booking fails, Algo falls back to the store driver. mp-uber is not affected, because nothing was promised to Uber Eats.
 3. **daas-uber marks the delivery** in `algo_discovery` (D-5).
 4. **daas-uber forwards callbacks.** For each Uber Direct webhook of a marketplace delivery: first the existing Algo callback, then `POST {CallbackURL}/marketplace/uber/callbacks` in a goroutine (D-6). Up to 3 attempts, backoff 1 s then 2 s, 3 s timeout each, failures logged. It never blocks the Algo callback.
 5. **The gateway publishes** the body unchanged to `marketplace_callbacks` and replies `202` (D-7, D-8).
@@ -94,7 +97,7 @@ Proxy (store-driver app) ──/events/location (as today)──▶ tracker-serv
 
 ## 6. Contracts
 
-### 6.1 Algo → mp-uber status (existing, unchanged shape)
+### 6.1 Algo → mp-uber status (existing, unchanged shape; Algo side is ALGO-2532)
 
 ```http
 POST {gateway}/mp/uber/order/status
@@ -110,7 +113,7 @@ POST {gateway}/mp/uber/order/status
 - `NewOrderMakeline`: row `received` + tracker subscription. It replaces the switch.
 - `EnRoute`: Uber Eats `started`. `Delivered`: Uber Eats `delivered`. Both are deduplicated for 30 min.
 
-### 6.2 Algo → daas-uber create delivery (excerpt, new fields marked)
+### 6.2 Algo → daas-uber create delivery (excerpt, new fields marked; Algo side is ALGO-2532, the DaaS side consumes it)
 
 ```http
 POST {gateway}/api/v2/deliveries
@@ -187,18 +190,19 @@ Notes:
 
 Each item is one plan task. "Done when" is the acceptance check.
 
-### 8.1 algo (`~/dragontail/algo`)
+### 8.0 Algo: out of scope, what the DaaS side relies on (ALGO-2532)
 
-1. **Replace the switch with `NewOrderMakeline`.** In the "store driver too far" branch of `checkForMPOrder` (`AggregatorsAPI.go:3198`), send the same `NewOrderMakeline` call that `stayWithStoreCarrier` sends (`:3250`), through `updateMarketPlaceWithDecision`. *Done when:* both branches send exactly one `NewOrderMakeline` and no switch.
-2. **Delete the switch code:** `switchOrderToMPCarrier` (`:3212`), `SwitchOrder` (`:190`), `SwitchOrderToMPPath` (`constValues.go:389`), the unused `PostUpdateSwitch` (`constValues.go:401`), the `MPSwitchFailedThenStay` flag, and the `UpdateOrderSaleType(CarryOut)` call (`:3246`).
-3. **Add `dispatchMPOrderToDaas(order, mpConfig)`.** Why: in multi-DaaS, Algo doesn't pick the provider. `ParseAggRequest` blanks `AggProvider` (`:693-694`), and `SendDelivery` reads the provider from the gateway quote result (`:847-866`). Steps: `ParseAggRequest` (`:672`), then set `AggProvider = "uber"` (today it is blanked at `:693`) and `Marketplace = MapOfAggMPSources[source]` (`FrontEndService.go:335`). Skip `SendQuote`, call `SendDelivery` (`:844`), then `sendDeliverySetCarrier` (`:1675`). On error, fall back to the store carrier.
-4. **Add `Marketplace string \`json:"marketplace,omitempty"\`` to `AggRequest`** (`:~302`).
-5. **Keep the Uber Eats `aggOrderId`:** `SetOrderAggCarrierId` (`:2111`) must not overwrite it with the daas-uber delivery id.
-6. **Turn on `Dispatch/AutoEnrouteOnAggPickup`** for the pilot stores (`:2383`, used at `AggregatorsEvents.go:614`).
-7. **Check** that `EnRoute` / `Delivered` MP status calls fire when a DaaS carrier delivers (O-2).
-8. **Bug fixes in `updateMarketPlaceWithDecision`** (`:3300-3324`): check the `http.NewRequest` error before using `req`, and treat `io.EOF` with a nil response as a failure.
+No Algo tasks are planned from this spec. The DaaS side assumes Algo provides the following. Track it as a dependency on ALGO-2532.
 
-### 8.2 daas-uber (`~/dragontail/daas-uber`)
+| # | Algo provides | DaaS side depends on it in |
+|---|---|---|
+| A-1 | `NewOrderMakeline` to `/mp/uber/order/status` for every marketplace order, store driver or DaaS. No `/order/switch` call. | mp-uber row and subscription (§8.4). Removing the switch route (§8.2). |
+| A-2 | Create delivery to `/api/v2/deliveries` with `aggProvider: "uber"`, `marketplace: "uber"`, and the Uber Eats order id in `targets[].details.altOrderId` (§6.2). | gateway aggProvider routing (§8.2), daas-uber marketplace flag (§8.1). |
+| A-3 | `EnRoute` and `Delivered` to `/mp/uber/order/status` for DaaS-delivered orders (O-2). | mp-uber dedup with the pushed statuses (§8.4). |
+| A-4 | The order stays a delivery (no carry-out), and the Uber Eats `aggOrderId` is kept on the order. | Uber Eats status and location calls. |
+| A-5 | Algo still consumes daas-uber's existing `/callbacks/…` unchanged. | daas-uber keeps sending them first (§8.1). |
+
+### 8.1 daas-uber (`~/dragontail/daas-uber`), DAAS-635
 
 1. **Accept `marketplace`.** Add it to `parsers.Order` (`internal/server/parsers/v1.go:116`) and `algo.Delivery` (`internal/algo/deliveries.go:6`), and map it in `V1.ToAlgoDelivery` (`v1.go:35`). Today the field is silently dropped.
 2. **Migration `migrations/19.add_marketplace_to_algo_discovery.sql`** (sql-migrate, `-- +migrate Up`): `marketplace text NULL`, `marketplace_order_id text NULL`.
@@ -207,7 +211,7 @@ Each item is one plan task. "Done when" is the acceptance check.
 5. **Copy courier lat/lng whenever present**, not only when the courier name or vehicle is set (`providers/uber/delivery.go:372-381`).
 6. **Market config:** add a brand+country → market map and `AGG_DEFAULTMARKET` (default `ph-uk`) to `Configuration` (`internal/config/config.go`, env prefix `AGG`).
 
-### 8.3 daas-gateway (`~/dragontail/daas-gateway`)
+### 8.2 daas-gateway (`~/dragontail/daas-gateway`), DAAS-636
 
 1. **Add the `MarketplaceCallback` handler**, modelled on `api/handler/callback.go:59-110`. Decode, require `orderId`/`storeNo`/`status`, `queue.SendMessage` (`pkg/queue/client.go:252`) to `MarketplaceCallbacksQueue`, reply 202.
 2. **Register `POST /marketplace/{provider}/callbacks`** in `api/handler/router.go`, next to the callbacks group (`:106-115`) and outside the `/mp/*` reverse proxy (`MakeMpProxyHandler`, `:148-160`), with no auth (D-11).
@@ -216,7 +220,7 @@ Each item is one plan task. "Done when" is the acceptance check.
 5. **`/api/v2/deliveries` honours `aggProvider`** (D-4): forward straight to that provider with no quote fan-out (`router.go:92-103`). Check what it does today first.
 6. **Handler test** with `httptest` and a buffered `messages` channel in the context.
 
-### 8.4 tracker-service (`~/dragontail/tracker-service`, the new tracker, not `tracker` or `tracksvc`)
+### 8.3 tracker-service (`~/dragontail/tracker-service`, the new tracker, not `tracker` or `tracksvc`), DAAS-637
 
 1. **RabbitMQ consumer:** add `amqp091-go` and `consumers/marketplaceCallbacks.go`, started from `StartUp()` (`configuration/startup.go:115`) behind `RABBITMQ_ENABLED`. Prefetch 50, manual ack, nack without requeue on bad JSON (goes to the DLQ), reconnect loop.
 2. **Store:** take `market` from the message (fall back to `DEFAULT_MARKET`). Append the callback to `…:mpcallbacks` (24 h). If it has a location, write a `LocationDto` with the existing repository call (`dataAccess/repositories/ordersRepository.go:404-431`).
@@ -225,12 +229,16 @@ Each item is one plan task. "Done when" is the acceptance check.
 5. **Dockerfile:** align the Go base image (1.23.4) with `go.mod` (1.25).
 6. **Tests** (testify + `redismock`): callback with a location, callback without a location, bad JSON, unknown market.
 
-### 8.5 mp-uber (`~/dragontail/mp-uber`)
+### 8.4 mp-uber (`~/dragontail/mp-uber`), DAAS-638
 
 1. **Delete the switch:** `POST order/switch` (`controllers/marketplaceOrderEventsController.go:65`), `SwitchToUberDelivery` (`services/uberMpEventsService.go:172-195`), `SwitchToUberDeliveryRequest` (`types/types.go:25`), the switch DTO (`types/mpDtos.go:36`) and `DELIVERY_BY_UBER` (`types/consts.go:41`).
 2. **Keep** the `NewOrderMakeline` row insert and tracker subscription as they are. No new endpoint, job or migration.
 3. **Order events:** in `processOrderEvents` (`uberMpEventsService.go:253-292`), map the order events that come from Uber Direct statuses to `started` / `delivered`.
 4. **Dedup:** check that the 30 min status dedup (`:324`, key in `types/consts.go:15-20`) stops a double `started` / `delivered` when both the push and Algo send it.
+
+### 8.5 Infra, DAAS-639 (DevOps, Ehab Jaber)
+
+EMEA Redis/Valkey (TLS), RabbitMQ access for `marketplace_callbacks` and its DLQ, and the tracker-service ECS deployment in EMEA. It blocks DAAS-637 going live.
 
 ## 9. Failure handling
 
@@ -246,11 +254,11 @@ Each item is one plan task. "Done when" is the acceptance check.
 
 **Release order**
 1. DevOps (separate ticket): EMEA Redis/Valkey and the queue, and deploy tracker-service with the consumer.
-2. daas-gateway with the new callbacks route. Keep the switch route until algo is released.
+2. daas-gateway with the new callbacks route. Keep the switch route until ALGO-2532 is released.
 3. daas-uber with the migration. It only acts when `marketplace` is set.
 4. mp-uber with the order-event mapping. The subscription is unchanged.
-5. algo with the switch replaced by `NewOrderMakeline`. Pilot one store through `Aggregators/MPSources`.
-6. Remove the switch route and code.
+5. (Out of scope, ALGO-2532) Algo release with the switch replaced by `NewOrderMakeline`, piloted on one store. The DaaS side must be live before this.
+6. Remove the switch route (daas-gateway) and the switch code (mp-uber).
 
 **End-to-end checks (staging)**
 - A store-driver order behaves exactly as today.
@@ -266,7 +274,7 @@ Each item is one plan task. "Done when" is the acceptance check.
 | ID | Item | Owner | Status |
 |---|---|---|---|
 | O-1 | Which Uber Direct status means `started` for Uber Eats? Algo only reaches EnRoute at `dropoff`. Now that order events are pushed, mp-uber can send `started` earlier. Options: `pickup` (courier assigned, driving to the store), `pickup_complete` (rarely sent by Uber), or `dropoff` (left the store, the same moment as Algo's EnRoute). | Sergey Shelekhov | Asked in Slack 2026-10-22 |
-| O-2 | Does Algo send `EnRoute` / `Delivered` to `/mp/uber/order/status` when a DaaS carrier delivers? If not, statuses rely only on the push. | Unassigned | To verify (algo task 7) |
+| O-2 | Does Algo send `EnRoute` / `Delivered` to `/mp/uber/order/status` when a DaaS carrier delivers? If not, statuses rely only on the push. | Algo team (ALGO-2532) | Dependency A-3 |
 | O-3 | Confirm Uber accepts `restaurantdelivery/status` and BYOC location for DaaS-courier orders. Uber has returned 400 "Cannot update status of this order type" before (DAAS-633). | Unassigned | Verify in staging |
 | O-4 | Uber Direct `canceled` / `returned` after registration: hand back to a store driver, rebook, or report a failure to Uber Eats. | – | Out of scope |
 | O-5 | Uber Direct webhook signature (`Uber.AuthWebhook`, `providers/uber/auth.go:17`, never called). | – | Out of scope |
