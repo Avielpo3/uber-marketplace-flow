@@ -146,32 +146,32 @@ pre.code i{color:var(--muted);font-style:normal}
 
   <main>
     <header id="summary" style="display:flex;flex-direction:column;gap:14px">
-      <div class="eyebrow">Technical spec · v4 · ph-uk (EMEA)</div>
+      <div class="eyebrow">Technical spec · v6 · ph-uk (EMEA)</div>
       <h1>Uber Marketplace Flow</h1>
-      <p class="lede">The switch is replaced by a regular create-delivery call to mp-uber, which tells mp-uber which orders to pull locations for. An Uber Eats order is always delivered by us, either by a store driver or, when none is free in time, by a daas-uber courier. Uber Eats only receives order statuses and courier locations. mp-uber sends both the same way for every order and never knows which kind of carrier delivered it.</p>
-      <div class="meta"><span>revised 2026-10-22</span><span>repos: algo · daas-uber · daas-gateway · tracker-service · mp-uber</span><span>file:line refs checked against local checkouts</span></div>
+      <p class="lede">The switch is replaced by the existing <code>NewOrderMakeline</code> call, which makes mp-uber subscribe to the order in tracker-service. Nothing polls. An Uber Eats order is always delivered by us, either by a store driver or, when none is free in time, by a daas-uber courier. Uber Eats only receives order statuses and courier locations. mp-uber sends both the same way for every order and never knows which kind of carrier delivered it.</p>
+      <div class="meta"><span>revised 2026-10-22</span><span><a href="https://github.com/Avielpo3/uber-marketplace-flow/blob/main/SPEC.md">SPEC.md</a> (full written spec)</span><span>repos: algo · daas-uber · daas-gateway · tracker-service · mp-uber</span><span>file:line refs checked against local checkouts</span></div>
       <div class="cols3">
-        <div class="panel stat"><b>Switch replaced</b><p><code>/order/switch</code> becomes <code>/mp/uber/order/delivery</code>, which registers the order in mp-uber. Nothing calls <code>switch-fulfillment-type</code> any more, so the order stays a restaurant delivery (BYOC).</p></div>
-        <div class="panel stat"><b>mp-uber doesn't know the carrier</b><p>Statuses come from Algo. Locations come from tracker-service, under the same Redis key for store drivers and DaaS couriers.</p></div>
-        <div class="panel stat"><b>2 blockers, 4 decisions</b><p>tracker-service isn't deployed and EMEA has no Redis. Decisions cover market lookup, point limit, auth, and the push-to-pull cutover.</p></div>
+        <div class="panel stat"><b>Switch replaced</b><p><code>/order/switch</code> is replaced by the existing <code>NewOrderMakeline</code> status call, which registers the order in mp-uber and creates its tracker subscription. Nothing calls <code>switch-fulfillment-type</code> any more, so the order stays a restaurant delivery (BYOC).</p></div>
+        <div class="panel stat"><b>mp-uber doesn't know the carrier</b><p>Statuses come from Algo and from tracker order events. Locations arrive through the existing tracker subscription push, under the same Redis key for store drivers and DaaS couriers.</p></div>
+        <div class="panel stat"><b>2 blockers, 1 question with Sergey</b><p>tracker-service isn't deployed and EMEA has no Redis (DevOps). Sergey has the question of which Uber Direct status means <code>started</code>.</p></div>
       </div>
     </header>
 
     <section id="blockers">
       <h2><span class="n">01</span>Before building</h2>
       <div class="cols">
-        <div class="panel stripe block"><span class="chip block">blocker · steps 5–7</span><h3>tracker-service is not deployed</h3><p>The README says "Not yet deployed". There are no ECS or Terraform definitions in the checkout <span class="ref">docs/cutover-2026-09-18/callers-report.md:23</span>. It needs an EMEA deployment with access to RabbitMQ and Redis.</p></div>
-        <div class="panel stripe block"><span class="chip block">blocker · step 6</span><h3>No Redis in EMEA prod</h3><p>"none exists in the EMEA prod account today" <span class="ref">docs/cutover-2026-09-18/uk-tracker-cutover.html:94</span>. ElastiCache would be Valkey, and serverless needs <code>REDIS_TLS</code> <span class="ref">tracker-service/CLAUDE.md:121</span>.</p></div>
+        <div class="panel stripe block"><span class="chip block">blocker · steps 5–7</span><h3>tracker-service is not deployed</h3><p>The README says "Not yet deployed". There are no ECS or Terraform definitions in the checkout <span class="ref">docs/cutover-2026-09-18/callers-report.md:23</span>. It needs an EMEA deployment with access to RabbitMQ and Redis. <b>Owner:</b> DevOps, in a separate ticket.</p></div>
+        <div class="panel stripe block"><span class="chip block">blocker · step 6</span><h3>No Redis in EMEA prod</h3><p>"none exists in the EMEA prod account today" <span class="ref">docs/cutover-2026-09-18/uk-tracker-cutover.html:94</span>. ElastiCache would be Valkey, and serverless needs <code>REDIS_TLS</code> <span class="ref">tracker-service/CLAUDE.md:121</span>. <b>Owner:</b> DevOps, in a separate ticket.</p></div>
         <div class="panel stripe decide"><span class="chip decide">confirm</span><h3>Uber accepts status for these orders</h3><p>Store-driver orders already send <code>restaurantdelivery/status</code> and BYOC location. Because nothing calls <code>switch-fulfillment-type</code> any more, DaaS-courier orders look the same to Uber. Still, check one in staging: Uber has returned 400 "Cannot update status of this order type" before (DAAS-633).</p></div>
       </div>
     </section>
 
     <section id="flow">
       <h2><span class="n">02</span>Flow</h2>
-      <p class="sub">Green boxes are changed or new. Blue lines carry courier location. Location reaches tracker-service from two sources, and mp-uber reads only from tracker-service.</p>
+      <p class="sub">Green boxes are changed or new. Blue lines carry marketplace callbacks and courier location. For a marketplace delivery, daas-uber sends every Uber Direct callback to the new gateway route, not only locations. Locations reach tracker-service from two sources, and mp-uber reads only from tracker-service.</p>
       <div class="scrollhint">Scroll sideways to follow the flow left to right →</div>
       <div class="diagram arch">
-        <svg viewBox="0 0 1960 650" role="img" aria-label="Left to right. Algo registers every order with mp-uber through the gateway route /mp/uber/order/delivery, which replaces the switch, and sends order statuses through /mp/uber/order/status; mp-uber sends started and delivered to Uber Eats. When no store driver is free in time, Algo books daas-uber through the gateway route /api/v2/deliveries with marketplace=uber. daas-uber creates the Uber Direct delivery and receives webhooks. It sends callbacks back through the gateway's /callbacks route and the store callback queue to Algo, and posts courier locations to the new gateway route /marketplace/uber/locations. The gateway publishes them to the new RabbitMQ queue marketplace_courier_locations. tracker-service consumes the queue and stores the points in Redis for 24 hours, together with store-driver points from the Proxy. mp-uber pulls the locations from tracker-service and sends them to Uber Eats.">
+        <svg viewBox="0 0 1960 650" role="img" aria-label="Left to right. Algo sends NewOrderMakeline for every order to mp-uber through the gateway route /mp/uber/order/status, which replaces the switch and makes mp-uber subscribe to the order in tracker-service, and later EnRoute and Delivered; mp-uber sends started and delivered to Uber Eats. When no store driver is free in time, Algo books daas-uber through the gateway route /api/v2/deliveries with marketplace=uber. daas-uber creates the Uber Direct delivery and receives webhooks. It sends callbacks back through the gateway's /callbacks route and the store callback queue to Algo, and posts every Uber Direct callback of a marketplace delivery, status and location, to the new gateway route /marketplace/uber/callbacks. The gateway publishes them to the new RabbitMQ queue marketplace_callbacks. tracker-service consumes the queue, keeps every callback and stores the location points in Redis for 24 hours, together with store-driver points from the Proxy. tracker-service's existing forwarding job pushes the new points and order events to mp-uber's subscription, and mp-uber sends them to Uber Eats. Nothing polls.">
           <defs>
             <marker id="a-ctl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-ctl"/></marker>
             <marker id="a-loc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-loc"/></marker>
@@ -187,10 +187,10 @@ pre.code i{color:var(--muted);font-style:normal}
           <text class="bs" x="610" y="126" text-anchor="middle">gateway-emea.daas.dts.ninja</text>
           <g class="box"><rect x="512" y="135" width="196" height="30" rx="6"/><text class="bs" x="524" y="154">/api/v2/deliveries</text></g>
           <g class="box"><rect x="512" y="280" width="196" height="30" rx="6"/><text class="bs" x="524" y="299">/callbacks/… (as today)</text></g>
-          <g class="box hl"><rect x="512" y="320" width="196" height="62" rx="6"/><text class="bs new" x="524" y="340">NEW /marketplace/</text><text class="bs new" x="524" y="355">uber/locations</text><text class="bs" x="524" y="372">publishes to RabbitMQ</text></g>
+          <g class="box hl"><rect x="512" y="320" width="196" height="62" rx="6"/><text class="bs new" x="524" y="340">NEW /marketplace/</text><text class="bs new" x="524" y="355">uber/callbacks</text><text class="bs" x="524" y="372">publishes to RabbitMQ</text></g>
           <g class="box"><rect x="512" y="505" width="196" height="30" rx="6"/><text class="bs" x="524" y="524">/mp/uber/order/status</text></g>
-          <g class="box hl"><rect x="512" y="450" width="196" height="30" rx="6"/><text class="bs new" x="524" y="469">/mp/uber/order/delivery</text></g>
-          <text class="bs" x="610" y="596" text-anchor="middle">order/delivery replaces order/switch</text>
+          <g class="box"><rect x="512" y="450" width="196" height="30" rx="6"/><text class="bs" x="524" y="469">/mp/uber/order/events</text></g>
+          <text class="bs" x="610" y="596" text-anchor="middle">− /mp/uber/order/switch</text>
 
           <!-- 2 booking -->
           <path class="e ctl" d="M240,150 L510,150" marker-end="url(#a-ctl)"/>
@@ -207,40 +207,37 @@ pre.code i{color:var(--muted);font-style:normal}
           <!-- Uber Direct -->
           <path class="e ctl" d="M1020,150 L1698,150" marker-end="url(#a-ctl)"/>
           <path class="e loc" d="M1700,205 L1022,205" marker-end="url(#a-loc)"/>
-          <!-- 1 create delivery (replaces switch) -->
-          <path class="e ctl" d="M240,465 L510,465" marker-end="url(#a-ctl)"/>
-          <path class="e ctl" d="M708,465 L778,465" marker-end="url(#a-ctl)"/>
           <!-- 1 statuses -->
           <path class="e ctl" d="M240,520 L510,520" marker-end="url(#a-ctl)"/>
           <path class="e ctl" d="M708,520 L778,520" marker-end="url(#a-ctl)"/>
           <path class="e ctl" d="M1020,538 L1698,538" marker-end="url(#a-ctl)"/>
-          <!-- 7 pull + send -->
-          <path class="e loc" d="M1460,442 L1460,500 L1022,500" marker-end="url(#a-loc)"/>
+          <!-- 7 forwarding job push via gateway /mp/uber/order/events -->
+          <path class="e loc" d="M1398,430 L640,430 L640,447" marker-end="url(#a-loc)"/>
+          <path class="e loc" d="M708,465 L778,465" marker-end="url(#a-loc)"/>
           <path class="e loc" d="M1020,568 L1698,568" marker-end="url(#a-loc)"/>
 
           <text class="ec" x="262" y="141">create delivery · marketplace=uber</text>
-          <text class="ec" x="262" y="456">create delivery · orders to pull</text>
+          <text class="ec" x="262" y="494">NewOrderMakeline replaces switch</text>
           <text class="ec" x="262" y="511">order/status · every order</text>
           <text class="ec" x="1040" y="141">create delivery</text>
           <text class="ec" x="1040" y="197">webhooks ~20 s · status + location</text>
           <text class="ec" x="770" y="362">publish</text>
           <text class="ec" x="1330" y="362">consume</text>
-          <text class="ec" x="1040" y="492">GET locations (via gateway /tracker)</text>
+          <text class="ec" x="1040" y="422">forwarding job push · points + order events</text>
           <text class="ec" x="1040" y="530">started · delivered</text>
           <text class="ec" x="1040" y="560">BYOC location</text>
 
           <g class="box"><rect x="40" y="110" width="200" height="450" rx="8"/><text class="bt" x="56" y="250">Algo backend</text><text class="bs" x="56" y="270">checkForMPOrder</text><text class="bs" x="56" y="292">store driver ≤ 30 min</text><text class="bs" x="56" y="308">  → store driver</text><text class="bs" x="56" y="326">else → daas-uber</text></g>
           <g class="box"><rect x="300" y="270" width="170" height="50" rx="8"/><text class="bt" x="314" y="291">RabbitMQ</text><text class="bs" x="314" y="309">store callback queue</text></g>
-          <g class="box hl"><rect x="780" y="110" width="240" height="140" rx="8"/><text class="bt" x="796" y="138">daas-uber</text><text class="bs" x="796" y="158">uber-emea.daas.dts.ninja</text><text class="bs new" x="796" y="182">+ marketplace columns</text><text class="bs new" x="796" y="200">+ posts locations</text><text class="bs new" x="796" y="216">  (marketplace orders only)</text></g>
-          <g class="box hl"><rect x="1100" y="335" width="220" height="70" rx="8"/><text class="bt" x="1116" y="360">RabbitMQ · new queue</text><text class="bs new" x="1116" y="380">marketplace_courier_locations</text><text class="bs" x="1116" y="396">durable · DLQ · 15 min</text></g>
+          <g class="box hl"><rect x="780" y="110" width="240" height="140" rx="8"/><text class="bt" x="796" y="138">daas-uber</text><text class="bs" x="796" y="158">uber-emea.daas.dts.ninja</text><text class="bs new" x="796" y="182">+ marketplace columns</text><text class="bs new" x="796" y="200">+ posts all callbacks</text><text class="bs new" x="796" y="216">  (marketplace orders only)</text></g>
+          <g class="box hl"><rect x="1100" y="335" width="220" height="70" rx="8"/><text class="bt" x="1116" y="360">RabbitMQ · new queue</text><text class="bs new" x="1116" y="380">marketplace_callbacks</text><text class="bs" x="1116" y="396">durable · DLQ · 15 min</text></g>
           <g class="box"><rect x="1400" y="232" width="240" height="50" rx="8"/><text class="bt" x="1416" y="253">Proxy</text><text class="bs" x="1416" y="270">store-driver points, as today</text></g>
-          <g class="box hl"><rect x="1400" y="320" width="240" height="122" rx="8"/><text class="bt" x="1416" y="346">tracker-service</text><text class="bs new" x="1416" y="364">+ queue consumer</text><rect class="pill" x="1416" y="380" width="208" height="44" rx="12"/><text class="bs lc" x="1430" y="398">Redis · list per order</text><text class="bs lc" x="1430" y="414">TTL 24 h · same key all carriers</text></g>
-          <g class="box hl"><rect x="780" y="448" width="240" height="137" rx="8"/><text class="bt" x="796" y="488">mp-uber</text><text class="bs" x="796" y="508">doesn't know the carrier</text><text class="bs new" x="796" y="546">+ order/delivery → pull list</text><text class="bs new" x="796" y="564">+ location poller job</text></g>
+          <g class="box hl"><rect x="1400" y="320" width="240" height="122" rx="8"/><text class="bt" x="1416" y="346">tracker-service</text><text class="bs new" x="1416" y="364">+ consumer · all callbacks</text><rect class="pill" x="1416" y="380" width="208" height="44" rx="12"/><text class="bs lc" x="1430" y="398">Redis · list per order</text><text class="bs lc" x="1430" y="414">TTL 24 h · same key all carriers</text></g>
+          <g class="box hl"><rect x="780" y="448" width="240" height="137" rx="8"/><text class="bt" x="796" y="488">mp-uber</text><text class="bs" x="796" y="508">doesn't know the carrier</text><text class="bs" x="796" y="546">subscribes on NewOrderMakeline</text><text class="bs" x="796" y="564">pushes in on /order/events</text></g>
           <g class="box"><rect x="1700" y="110" width="220" height="140" rx="8"/><text class="bt" x="1716" y="138">Uber Direct</text><text class="bs" x="1716" y="158">delivery API</text><text class="bs" x="1716" y="176">courier_status</text><text class="bs" x="1716" y="192">delivery_status</text></g>
           <g class="box"><rect x="1700" y="480" width="220" height="105" rx="8"/><text class="bt" x="1716" y="508">Uber Eats API</text><text class="bs" x="1716" y="528">restaurantdelivery/status</text><text class="bs" x="1716" y="546">byoc/…/event/location</text></g>
 
           <g class="bd"><circle cx="743" cy="520" r="11"/><text x="743" y="524">1</text></g>
-          <g class="bd"><circle cx="743" cy="465" r="11"/><text x="743" y="469">1</text></g>
           <g class="bd"><circle cx="1360" cy="538" r="11"/><text x="1360" y="542">1</text></g>
           <g class="bd"><circle cx="743" cy="150" r="11"/><text x="743" y="154">2</text></g>
           <g class="bd"><circle cx="780" cy="110" r="11"/><text x="780" y="114">3</text></g>
@@ -248,11 +245,11 @@ pre.code i{color:var(--muted);font-style:normal}
           <g class="bd"><circle cx="752" cy="280" r="11"/><text x="752" y="284">4</text></g>
           <g class="bd"><circle cx="900" cy="370" r="11"/><text x="900" y="374">5</text></g>
           <g class="bd"><circle cx="1400" cy="320" r="11"/><text x="1400" y="324">6</text></g>
-          <g class="bd"><circle cx="1460" cy="472" r="11"/><text x="1460" y="476">7</text></g>
+          <g class="bd"><circle cx="1360" cy="430" r="11"/><text x="1360" y="434">7</text></g>
           <g class="bd"><circle cx="1360" cy="568" r="11"/><text x="1360" y="572">7</text></g>
         </svg>
       </div>
-      <div class="legend"><span>statuses, bookings and callbacks</span><span class="lg-loc">courier location</span></div>
+      <div class="legend"><span>statuses, bookings and Algo callbacks</span><span class="lg-loc">marketplace callbacks and courier location</span></div>
 
       <div class="diagram">
 <pre class="mermaid">
@@ -266,11 +263,11 @@ sequenceDiagram
   participant Q as RabbitMQ (new queue)
   participant T as tracker-service
   Note over A: checkForMPOrder picks the carrier
-  A->>G: 1. POST /mp/uber/order/delivery (replaces switch)
+  A->>G: 1. POST /mp/uber/order/status NewOrderMakeline (replaces switch)
   G->>M: proxy
-  M->>M: upsert row, pullLocations = true
-  A->>G: 1. POST /mp/uber/order/status NewOrderMakeline
-  G->>M: proxy
+  M->>M: insert row 'received'
+  M->>G: subscribe: /tracker/events/subscription (location + order)
+  G->>T: create subscription, callback /mp/uber/order/events
   alt store driver free within 30 min
     Note over A,T: store driver delivers, Proxy posts points to tracker (as today)
   else no store driver in time
@@ -279,26 +276,25 @@ sequenceDiagram
     DU->>UD: create delivery
     DU->>DU: 3. algo_discovery.marketplace = uber
     loop each webhook, about every 20 s
-      UD->>DU: 4. courier_status + location
+      UD->>DU: 4. courier_status / delivery_status
       DU->>G: /callbacks/... (unchanged)
       G->>A: store callback queue
-      DU->>G: POST /marketplace/uber/locations
+      DU->>G: POST /marketplace/uber/callbacks (every callback)
       G-->>DU: 202
-      G->>Q: 5. publish marketplace_courier_locations
+      G->>Q: 5. publish marketplace_callbacks
       Q->>T: consume (manual ack)
-      T->>T: 6. RPUSH, LTRIM, EXPIRE 24 h
+      T->>T: 6. save to Redis: order event + point (if any)
     end
   end
-  A->>G: 1. order/status EnRoute (pickup)
-  G->>M: proxy
-  M->>UE: restaurantdelivery/status started
-  loop mp-uber poller, every 10 s, each open order
-    M->>T: 7. GET locations (via gateway /tracker)
-    M->>UE: BYOC location (newest unsent point)
+  loop tracker forwarding job, every interval
+    T->>G: 7. POST /mp/uber/order/events (new points + order events)
+    G->>M: proxy
+    M->>UE: restaurantdelivery/status started / delivered (from order events)
+    M->>UE: BYOC location (once started)
   end
-  A->>G: 1. order/status Delivered
+  A->>G: 1. order/status EnRoute, later Delivered (as today)
   G->>M: proxy
-  M->>UE: restaurantdelivery/status delivered
+  M->>UE: same status, deduplicated for 30 min
 </pre>
       </div>
     </section>
@@ -307,12 +303,12 @@ sequenceDiagram
       <h2><span class="n">03</span>Step by step</h2>
 
       <div class="step"><div class="badge">1</div><div class="body">
-        <h3>Algo registers the order and reports statuses <span class="chip new">create delivery replaces switch</span> <span class="chip keep">status call as today</span></h3>
-        <div class="route">Algo → daas-gateway → mp-uber · POST /mp/uber/order/delivery, then POST /mp/uber/order/status → Uber Eats</div>
+        <h3>Algo registers the order and reports statuses <span class="chip new">NewOrderMakeline replaces switch</span> <span class="chip keep">existing call</span></h3>
+        <div class="route">Algo → daas-gateway → mp-uber · POST /mp/uber/order/status → Uber Eats</div>
         <dl class="kv">
           <dt>Decision</dt><dd><code>checkForMPOrder</code> <span class="ref">algo AggregatorsAPI.go:3139</span>. If a store driver is free within <code>MarketPlace.carrierThreshold</code> (30 min), the store carrier is used, as today. If not, the order goes to daas-uber (step 2).</dd>
-          <dt>Create delivery</dt><dd>Replaces the switch. In both branches Algo sends <code>POST /mp/uber/order/delivery</code> with the regular create-delivery body (the same <code>AggRequest</code> it sends to DaaS). mp-uber upserts its <code>marketplaceorderstatus</code> row with <code>pullLocations = true</code>. That row is the list the poller in step 7 reads. Nothing is sent to Uber Eats.</dd>
-          <dt>Statuses</dt><dd><code>NewOrderMakeline</code> when the carrier is chosen (mp-uber inserts its row), <code>EnRoute</code> at pickup, <code>Delivered</code> at the end. The calls are identical for both carriers. mp-uber maps them through <code>TriggerUpdatesOrderStatuses</code> (default <code>EnRoute,Delivered</code>) <span class="ref">mp-uber configuration.yaml:22</span>.</dd>
+          <dt>One call</dt><dd><b>Decided:</b> the switch, the create delivery and <code>NewOrderMakeline</code> are merged into one request, <code>NewOrderMakeline</code>, sent in both branches. mp-uber already handles it: it inserts its <code>marketplaceorderstatus</code> row as <code>received</code> and subscribes to the order in tracker-service (<code>SubscribeToLocationsOnStatus</code> = <code>NewOrderMakeline</code>) <span class="ref">uberMpEventsService.go:42, :99-116</span>. Nothing is sent to Uber Eats.</dd>
+          <dt>Statuses</dt><dd><code>NewOrderMakeline</code> when the carrier is chosen, <code>EnRoute</code> at pickup, <code>Delivered</code> at the end. The calls are identical for both carriers. mp-uber maps them through <code>TriggerUpdatesOrderStatuses</code> (default <code>EnRoute,Delivered</code>) <span class="ref">mp-uber configuration.yaml:22</span>.</dd>
           <dt>To Uber Eats</dt><dd><code>POST /eats/orders/{aggOrderId}/restaurantdelivery/status</code>. <code>started</code> for EnRoute and earlier, <code>delivered</code> for Delivered. Deduplicated for 30 min <span class="ref">uberMpEventsService.go:317-339</span>.</dd>
           <dt>DaaS orders</dt><dd>Algo's order reaches EnRoute and Delivered from the daas-uber callbacks. <code>AutoEnrouteOnAggPickup</code> moves it to EnRoute on pickup <span class="ref">AggregatorsEvents.go:614</span>. Verify that Algo sends these MP status calls on any carrier's transition, not only for store drivers.</dd>
           <dt>Retries</dt><dd><code>updateMarketPlaceWithDecision</code>: 6 attempts, backoff 1–16 s <span class="ref">:3289</span>.</dd>
@@ -323,10 +319,10 @@ sequenceDiagram
         <h3>Algo books daas-uber only <span class="chip new">changed</span></h3>
         <div class="route">Algo → daas-gateway → daas-uber · POST /api/v2/deliveries → POST /api/v1/deliveries/</div>
         <dl class="kv">
-          <dt>When</dt><dd>Only in the "no store driver in time" branch of <code>checkForMPOrder</code> <span class="ref">:3198</span>, which today calls the switch. The switch call there becomes the step 1 create delivery.</dd>
+          <dt>When</dt><dd>Only in the "no store driver in time" branch of <code>checkForMPOrder</code> <span class="ref">:3198</span>, which today calls the switch. The switch call there is replaced by the step 1 <code>NewOrderMakeline</code>.</dd>
           <dt>Why it's work</dt><dd>Algo does not pick the provider. In multi-DaaS, <code>ParseAggRequest</code> blanks <code>AggProvider</code> <span class="ref">:693</span>, and the provider comes from the gateway quote <span class="ref">:847-866</span>.</dd>
-          <dt>Mechanism</dt><dd>New <code>dispatchMPOrderToDaas</code> does three things. It sends the step 1 calls to mp-uber. It runs <code>ParseAggRequest</code> and sets <code>AggProvider="uber"</code> and <code>Marketplace=MapOfAggMPSources[source]</code> <span class="ref">FrontEndService.go:335</span>. It skips <code>SendQuote</code> and calls <code>SendDelivery</code>, then <code>sendDeliverySetCarrier</code>.</dd>
-          <dt>Gateway</dt><dd>With <code>aggProvider</code> set, <code>/api/v2/deliveries</code> must forward to that provider only. Verify <span class="ref">daas-gateway router.go:92-103</span>.</dd>
+          <dt>Mechanism</dt><dd>New <code>dispatchMPOrderToDaas</code> does three things. It sends <code>NewOrderMakeline</code> to mp-uber (step 1). It runs <code>ParseAggRequest</code> and sets <code>AggProvider="uber"</code> and <code>Marketplace=MapOfAggMPSources[source]</code> <span class="ref">FrontEndService.go:335</span>. It skips <code>SendQuote</code> and calls <code>SendDelivery</code>, then <code>sendDeliverySetCarrier</code>.</dd>
+          <dt>Gateway</dt><dd><b>Decided:</b> the gateway honours <code>aggProvider</code>. When it is set, <code>/api/v2/deliveries</code> forwards straight to that provider with no quote fan-out. Check <span class="ref">daas-gateway router.go:92-103</span> and change it there if it doesn't already.</dd>
           <dt>On failure</dt><dd>Fall back to the store carrier. mp-uber already has its row and doesn't notice the difference.</dd>
         </dl>
       </div></div>
@@ -341,44 +337,49 @@ sequenceDiagram
       </div></div>
 
       <div class="step"><div class="badge loc">4</div><div class="body">
-        <h3>daas-uber forwards locations <span class="chip keep">callbacks as today</span> <span class="chip loc">+ one POST</span></h3>
+        <h3>daas-uber forwards every marketplace callback <span class="chip keep">Algo callbacks as today</span> <span class="chip loc">+ one POST per callback</span></h3>
         <dl class="kv">
           <dt>Where</dt><dd><code>Uber()</code> <span class="ref">internal/server/providers.go:52-145</span>, after the existing gateway callback <span class="ref">:136</span>.</dd>
-          <dt>Condition</dt><dd><code>marketplace != ""</code> and a non-zero courier lat/lng.</dd>
-          <dt>Send</dt><dd>A goroutine POSTs to <code>{CallbackURL}/marketplace/uber/locations</code>, 3 s timeout, no retry. A failure is logged and doesn't affect the Algo callback.</dd>
+          <dt>Condition</dt><dd><code>marketplace != ""</code>. Every Uber Direct webhook for the delivery is forwarded, both <code>courier_status</code> and <code>delivery_status</code>. That covers every status from <code>pending</code> to <code>delivered</code>, plus <code>canceled</code> and <code>returned</code>, with or without a location. Normal DaaS deliveries are untouched.</dd>
+          <dt>Market</dt><dd>daas-uber puts <code>market</code> (e.g. <code>ph-uk</code>) in the body. It resolves it from brand+country in its config and falls back to a new default, <code>AGG_DEFAULTMARKET</code> (<code>ph-uk</code> in EMEA). tracker-service also falls back to its <code>DEFAULT_MARKET</code> if <code>market</code> is empty.</dd>
+          <dt>Send</dt><dd>A goroutine POSTs to <code>{CallbackURL}/marketplace/uber/callbacks</code> after the Algo callback: up to 3 attempts (backoff 1 s, 2 s), 3 s timeout each. Statuses like <code>delivered</code> come only once, so a lost one is not replaced by the next webhook. A failure is logged and doesn't affect the Algo callback.</dd>
           <dt>Fix</dt><dd>Copy location whenever lat/lng exist, not only when a courier name or vehicle is set <span class="ref">providers/uber/delivery.go:372-381</span>.</dd>
         </dl>
       </div></div>
 
       <div class="step"><div class="badge loc">5</div><div class="body">
         <h3>Gateway publishes to RabbitMQ, tracker-service consumes <span class="chip new">new route + queue</span></h3>
-        <div class="route">daas-uber → daas-gateway → RabbitMQ marketplace_courier_locations → tracker-service</div>
+        <div class="route">daas-uber → daas-gateway → RabbitMQ marketplace_callbacks → tracker-service</div>
         <dl class="kv">
-          <dt>Route</dt><dd><code>POST /marketplace/{provider}/locations</code>, outside the <code>/mp/*</code> reverse proxy <span class="ref">router.go:148-160</span>.</dd>
-          <dt>Publish</dt><dd><code>SendMessage</code> to <code>marketplace_courier_locations</code> <span class="ref">pkg/queue/client.go:252</span>: durable, persistent, default exchange, DLQ <code>…_DLQ</code>, 15 min expiry, reply 202.</dd>
-          <dt>Config</dt><dd><code>[queue] marketplaceLocationsQueue</code> <span class="ref">config/queue.go</span>, set by <code>DT_QUEUE_MARKETPLACELOCATIONSQUEUE</code>.</dd>
-          <dt>Replace</dt><dd>The <code>/mp/{provider}/order/switch</code> route becomes <code>/mp/{provider}/order/delivery</code>, through the same <code>MarketplaceProxy</code> <span class="ref">router.go:153-155</span>.</dd>
+          <dt>Route</dt><dd><code>POST /marketplace/{provider}/callbacks</code>, outside the <code>/mp/*</code> reverse proxy <span class="ref">router.go:148-160</span>.</dd>
+          <dt>Publish</dt><dd><code>SendMessage</code> to <code>marketplace_callbacks</code> <span class="ref">pkg/queue/client.go:252</span>: durable, persistent, default exchange, DLQ <code>…_DLQ</code>, 15 min expiry, reply 202.</dd>
+          <dt>Config</dt><dd><code>[queue] marketplaceCallbacksQueue</code> <span class="ref">config/queue.go</span>, set by <code>DT_QUEUE_MARKETPLACECALLBACKSQUEUE</code>.</dd>
+          <dt>Auth</dt><dd><b>Decided for the pilot:</b> none, the same as <code>/callbacks</code>. Add a service JWT later, for both routes.</dd>
+          <dt>Delete</dt><dd>The <code>/mp/{provider}/order/switch</code> route <span class="ref">router.go:153-155</span>. <code>NewOrderMakeline</code> uses the existing <code>/mp/{provider}/order/status</code>, and the subscription push uses the existing <code>/mp/{provider}/order/events</code>.</dd>
         </dl>
       </div></div>
 
       <div class="step"><div class="badge loc">6</div><div class="body">
-        <h3>tracker-service stores the points <span class="chip new">new consumer</span></h3>
+        <h3>tracker-service stores callbacks and points <span class="chip new">new consumer</span></h3>
         <dl class="kv">
-          <dt>Consumer</dt><dd>New <code>amqp091-go</code> consumer on <code>marketplace_courier_locations</code>: prefetch 50, manual ack, nack without requeue on bad JSON (to the DLQ), reconnect loop.</dd>
-          <dt>Same key</dt><dd>It writes with the existing list write <span class="ref">ordersRepository.go:404-431</span> to <code>tr-svc:market:{m}:store:{s}:posorder:{o}:locations</code>. That is the key store-driver points from the Proxy (<code>POST /events/location</code>) already use, so readers see one list per order whatever the carrier.</dd>
+          <dt>Consumer</dt><dd>New <code>amqp091-go</code> consumer on <code>marketplace_callbacks</code>: prefetch 50, manual ack, nack without requeue on bad JSON (to the DLQ), reconnect loop.</dd>
+          <dt>Callbacks</dt><dd>Every message is saved as an order event in a new list <code>tr-svc:market:{m}:store:{s}:posorder:{o}:mpcallbacks</code> with a 24 h TTL, so the order's full Uber Direct history is kept. The key name is proposed.</dd>
+          <dt>Forwarding</dt><dd>The consumer adds each new point and order event to the order's forwarding source (<code>tr-svc:fwd:…</code>) <span class="ref">types/consts.go:34-36</span>. The existing forwarding job runs every interval, picks them up and POSTs them to the subscribers, here mp-uber. This is a separate path from <code>POST /events/location</code>, which is the mobile-app flow from the Proxy.</dd>
+          <dt>Same key</dt><dd>When the message has a location, the point is also written with the existing list write <span class="ref">ordersRepository.go:404-431</span> to <code>tr-svc:market:{m}:store:{s}:posorder:{o}:locations</code>. That is the key store-driver points from the Proxy (<code>POST /events/location</code>) already use, so readers see one list per order whatever the carrier.</dd>
           <dt>TTL</dt><dd>24 h, refreshed on every write. That is already the <code>orderLocations</code> setting <span class="ref">configuration.yaml:55-58</span>.</dd>
-          <dt>Limit</dt><dd>Trimmed to <code>REDIS_MAX_LOCATIONS_PER_ORDER</code> = 100 today <span class="ref">configuration.yaml:53</span> (see 09).</dd>
+          <dt>Limit</dt><dd><b>Decided:</b> raise <code>REDIS_MAX_LOCATIONS_PER_ORDER</code> from 100 to 360, about 2 h at one point every 20 s <span class="ref">configuration.yaml:53</span>.</dd>
         </dl>
       </div></div>
 
       <div class="step"><div class="badge loc">7</div><div class="body">
-        <h3>mp-uber pulls and sends <span class="chip new">poller replaces push</span></h3>
+        <h3>tracker-service pushes to mp-uber <span class="chip keep">existing subscription</span> <span class="chip del">no polling</span></h3>
+        <div class="route">tracker-service forwarding job → daas-gateway → mp-uber · POST /mp/uber/order/events → Uber Eats</div>
         <dl class="kv">
-          <dt>Today</dt><dd>mp-uber subscribes to tracker v2 on <code>NewOrderMakeline</code> and receives pushes on <code>/mp/uber/order/events</code> <span class="ref">trackerV2Service.go:30-80</span>.</dd>
-          <dt>Job</dt><dd>New <code>jobs/pullLocationsJob.go</code>, registered like <code>loadExternalStoreIdsJob</code> <span class="ref">configuration/dependenciesConfig.go:36</span>, runs every <code>JOB_PULL_LOCATIONS_INTERVAL</code> (default 10 s).</dd>
-          <dt>Per order</dt><dd>Applies to every row with <code>pullLocations = true</code> (set by create delivery) and status <code>received</code> or <code>started</code>, updated within 24 h. No carrier check. It reads <code>GET {GATEWAY_URL}/tracker/stores/{storeNo}/orders/{orderId}/locations</code>, keeps points newer than <code>lastLocationTs</code>, and sends the newest to <code>processLocationEvents</code> <span class="ref">uberMpEventsService.go:197</span>.</dd>
-          <dt>Gate</dt><dd>Locations go out only after <code>started</code>, which step 1 sets on EnRoute <span class="ref">:162</span>.</dd>
-          <dt>Store id</dt><dd><code>externalStoreId</code> comes from <code>StoresConfigurationMap</code> <span class="ref">trackerV2Service.go:31</span>.</dd>
+          <dt>Mechanism</dt><dd>The existing tracker v2 subscription. mp-uber creates it on <code>NewOrderMakeline</code> with callback <code>{gateway}/mp/uber/order/events</code> and events <code>location</code> and <code>order</code> <span class="ref">trackerV2Service.go:30-80</span>. It works the same for store drivers and DaaS couriers, and there is no push-to-pull cutover.</dd>
+          <dt>Handler</dt><dd>The existing <code>ProcessOrderEventsBatch</code> <span class="ref">uberMpEventsService.go:120-170</span> handles order events first, then sends the newest point with <code>processLocationEvents</code> once the order is <code>started</code> <span class="ref">:162-164</span>.</dd>
+          <dt>Order events</dt><dd><b>Decided:</b> the Uber Direct statuses are pushed too. <code>processOrderEvents</code> <span class="ref">:253-292</span> turns them into <code>started</code> / <code>delivered</code> for Uber Eats. Algo's <code>EnRoute</code> / <code>Delivered</code> still arrive through <code>/order/status</code>. The 30 min dedup key per order and status stops a double call to Uber Eats <span class="ref">types/consts.go:15-20</span>.</dd>
+          <dt>Store id</dt><dd><code>externalStoreId</code> comes from the subscription key in the push, as today.</dd>
+          <dt>Interval</dt><dd>The tracker forwarding job's existing interval <span class="ref">tracker-service configuration/startup.go:115-120</span>.</dd>
         </dl>
       </div></div>
     </section>
@@ -397,22 +398,11 @@ sequenceDiagram
   "orderId": "26101402978",
   "orderStatus": "NewOrderMakeline" <i>| "EnRoute" | "Delivered"</i>
 }
+<i>NewOrderMakeline → row 'received' + tracker subscription
+                   (replaces the switch)</i>
 <i>→ Uber Eats</i>
 POST /eats/orders/{aggOrderId}/restaurantdelivery/status
 { "status": "started" <i>| "delivered"</i> }</pre></div>
-        <div class="panel"><h4>1 · Algo → mp-uber create delivery (replaces switch)</h4>
-<pre class="code"><b>POST {gateway}/mp/uber/order/delivery</b>
-{
-  "brand": "Pizza Hut:GH Pizza LTD-United Kingdom",
-  "storeId": "7507",
-  "targets": [{ "details": {
-    "id": "26101402978",
-    "altOrderId": "d3b93b60-c336-4b32-87e6-bed8eb0c2cab"
-  }}],
-  "marketplace": "uber"
-}
-<i>→ 201 · mp-uber row: pullLocations = true</i>
-<i>no call to Uber Eats</i></pre></div>
         <div class="panel"><h4>2 · Algo → daas-uber (excerpt)</h4>
 <pre class="code">POST {gateway}/api/v2/deliveries
 {
@@ -426,29 +416,36 @@ POST /eats/orders/{aggOrderId}/restaurantdelivery/status
 <b>  "marketplace": "uber"</b>
 }</pre></div>
         <div class="panel"><h4>4 → 5 · daas-uber → gateway → queue</h4>
-<pre class="code"><b>POST {gateway}/marketplace/uber/locations</b>
-<b>queue marketplace_courier_locations (same body)</b>
+<pre class="code"><b>POST {gateway}/marketplace/uber/callbacks</b>
+<b>queue marketplace_callbacks (same body)</b>
 {
   "marketplace": "uber",
+<b>  "market": "ph-uk",</b>
   "brand": "Pizza Hut",
   "franchisee": "GH Pizza LTD",
   "country": "United Kingdom",
   "storeNo": "7507",
   "orderId": "26101402978",
   "deliveryId": "del_UowjW4AJTSGDNwqOOFCwCg",
-  "lat": 51.913002,
-  "lng": -0.20857728,
+<b>  "event": "courier_status",</b>
+<b>  "status": "dropoff",</b>
+<b>  "targetStatus": 3,</b>
+<b>  "courierStatus": 5,</b>
+<b>  "location": { "lat": 51.913002, "lng": -0.20857728 },</b>
   "timestamp": 1791975067000
 }
+<i>location is null on pending, delivered, canceled, returned</i>
 <i>→ 202 Accepted</i></pre></div>
-        <div class="panel"><h4>6 · Redis · 7 · read and send</h4>
+        <div class="panel"><h4>6 · Redis · 7 · push and send</h4>
 <pre class="code"><i>key (shared with store-driver points)</i>
 tr-svc:market:ph-uk:store:7507:posorder:26101402978:locations
 <i>value (LocationDto)</i>
 {"lat":51.913002,"lng":-0.20857728,"timestamp":1791975067000}
 <i>TTL</i> 86400 s, refreshed on every write
 
-GET {gateway}/tracker/stores/7507/orders/26101402978/locations
+<i>forwarding job → subscriber (existing format)</i>
+POST {gateway}/mp/uber/order/events
+<i>key + new location events + order events</i>
 
 <i>→ Uber Eats</i>
 POST /eats/byoc/restaurants/orders/event/location
@@ -461,17 +458,17 @@ POST /eats/byoc/restaurants/orders/event/location
       <h2><span class="n">05</span>Statuses</h2>
       <p class="sub">Uber Eats gets the same two statuses whichever carrier delivers. For a DaaS courier, they come from the daas-uber callbacks through Algo <span class="ref">daas-uber providers/uber/delivery.go:414-439</span>.</p>
       <div class="tablewrap"><table>
-        <thead><tr><th>Uber Direct</th><th>Algo target / courier</th><th>Algo order</th><th>mp-uber call</th><th>Uber Eats</th><th>Location to tracker</th></tr></thead>
+        <thead><tr><th>Uber Direct</th><th>Algo target / courier</th><th>Algo order</th><th>mp-uber call</th><th>Uber Eats</th><th>Pushed to mp-uber</th></tr></thead>
         <tbody>
-          <tr><td class="mono">pending</td><td class="mono">1 Scheduled / 0</td><td>–</td><td>– (NewOrderMakeline already sent)</td><td>–</td><td>no</td></tr>
-          <tr><td class="mono">pickup</td><td class="mono">2 Assigned / 2 · 3</td><td>–</td><td>–</td><td>–</td><td>yes</td></tr>
-          <tr><td class="mono">pickup_complete</td><td class="mono">2 Assigned / 3 ArrivedAtStore</td><td>–</td><td>–</td><td>–</td><td>yes</td></tr>
-          <tr><td class="mono">dropoff</td><td class="mono">3 PickedUp / 5 · 8</td><td>EnRoute (auto)</td><td class="mono">EnRoute</td><td class="mono">started</td><td>yes</td></tr>
-          <tr><td class="mono">delivered</td><td class="mono">4 Delivered / 7</td><td>Delivered</td><td class="mono">Delivered</td><td class="mono">delivered</td><td>no</td></tr>
-          <tr><td class="mono">canceled · returned</td><td class="mono">5 · 6</td><td>back to dispatch</td><td>–</td><td>–</td><td>no</td></tr>
+          <tr><td class="mono">pending</td><td class="mono">1 Scheduled / 0</td><td>–</td><td>– (NewOrderMakeline already sent)</td><td>–</td><td>order event</td></tr>
+          <tr><td class="mono">pickup</td><td class="mono">2 Assigned / 2 · 3</td><td>–</td><td>–</td><td>–</td><td>order event + point</td></tr>
+          <tr><td class="mono">pickup_complete</td><td class="mono">2 Assigned / 3 ArrivedAtStore</td><td>–</td><td>–</td><td>started? (Sergey)</td><td>order event + point</td></tr>
+          <tr><td class="mono">dropoff</td><td class="mono">3 PickedUp / 5 · 8</td><td>EnRoute (auto)</td><td class="mono">EnRoute</td><td class="mono">started</td><td>order event + point</td></tr>
+          <tr><td class="mono">delivered</td><td class="mono">4 Delivered / 7</td><td>Delivered</td><td class="mono">Delivered</td><td class="mono">delivered</td><td>order event</td></tr>
+          <tr><td class="mono">canceled · returned</td><td class="mono">5 · 6</td><td>back to dispatch</td><td>–</td><td>–</td><td>order event</td></tr>
         </tbody>
       </table></div>
-      <p class="note">PickedUp (target status 3) arrives only with <code>dropoff</code>, so for a DaaS courier <code>started</code> is sent when the courier leaves the store. Points from the pickup leg are stored but not sent, because the gate in step 7 is closed until then.</p>
+      <p class="note">Uber Eats gets <code>started</code> from whichever comes first: the pushed order event or Algo's <code>EnRoute</code>. Points from before <code>started</code> are stored but not sent, because mp-uber's gate stays closed until then. Which Uber Direct status counts as <code>started</code> is with Sergey.</p>
     </section>
 
     <section id="repos">
@@ -479,8 +476,8 @@ POST /eats/byoc/restaurants/orders/event/location
 
       <div class="panel repo"><header><h3>algo</h3><span class="chip decide">medium</span><span class="path">~/dragontail/algo</span></header>
         <ul class="tasks">
-          <li><span>Replace <code>switchOrderToMPCarrier</code> with <code>createMPDelivery</code>, called in both branches of <code>checkForMPOrder</code>. Point <code>SwitchOrderToMPPath</code> at <code>/mp/{MPAggName}/order/delivery</code> and send the regular <code>AggRequest</code> instead of <code>SwitchOrder</code>. <span class="ref">AggregatorsAPI.go:190, :3212 · constValues.go:389</span></span></li>
-          <li class="del"><span>Delete <code>SwitchOrder</code>, the unused <code>PostUpdateSwitch</code>, the <code>MPSwitchFailedThenStay</code> flag and the <code>UpdateOrderSaleType(CarryOut)</code> call. <span class="ref">:3246 · constValues.go:401</span></span></li>
+          <li><span>Replace <code>switchOrderToMPCarrier</code> with the <code>NewOrderMakeline</code> status call that <code>stayWithStoreCarrier</code> already sends <span class="ref">AggregatorsAPI.go:3250</span>, so both branches of <code>checkForMPOrder</code> send the same single call.</span></li>
+          <li class="del"><span>Delete <code>switchOrderToMPCarrier</code>, <code>SwitchOrder</code>, <code>SwitchOrderToMPPath</code>, the unused <code>PostUpdateSwitch</code>, the <code>MPSwitchFailedThenStay</code> flag and the <code>UpdateOrderSaleType(CarryOut)</code> call. <span class="ref">:190, :3212, :3246 · constValues.go:389, :401</span></span></li>
           <li><span>Add <code>dispatchMPOrderToDaas</code> (step 2) and call it from the "too far" branch. <span class="ref">:3198</span></span></li>
           <li><span>Add <code>Marketplace</code> with <code>json:"marketplace,omitempty"</code> to <code>AggRequest</code>. <span class="ref">:~302</span></span></li>
           <li><span>Keep the Uber Eats <code>aggOrderId</code> in <code>SetOrderAggCarrierId</code>, and don't overwrite it with the daas-uber delivery id. <span class="ref">:2111</span></span></li>
@@ -494,37 +491,36 @@ POST /eats/byoc/restaurants/orders/event/location
           <li><span>Add <code>Marketplace</code> to <code>parsers.Order</code> and <code>algo.Delivery</code>, and map it in <code>V1.ToAlgoDelivery</code>. <span class="ref">parsers/v1.go:35,116 · algo/deliveries.go:6</span></span></li>
           <li><span>Add migration <code>19.add_marketplace_to_algo_discovery.sql</code>.</span></li>
           <li><span>Add the columns to <code>OrderRequest</code>, <code>SaveOnce</code>, <code>GetOrderByAggID</code> and the <code>getAlgoDeliveryByAggID</code> fallback. <span class="ref">algo/repository.go:21,55,100 · providers.go:165</span></span></li>
-          <li><span>Add <code>SendMarketplaceLocation</code> in <code>gatewayAPI.go</code>, and call it with <code>go</code> after the callback in <code>Uber()</code>. <span class="ref">providers.go:136</span></span></li>
+          <li><span>Add <code>SendMarketplaceCallback</code> in <code>gatewayAPI.go</code>, and call it with <code>go</code> after the Algo callback in <code>Uber()</code> for every webhook of a marketplace delivery: 3 attempts, 3 s timeout each. <span class="ref">providers.go:136</span></span></li>
           <li><span>Copy courier lat/lng whenever present. <span class="ref">delivery.go:372</span></span></li>
-          <li><span>Call the existing <code>Uber.AuthWebhook</code> signature check in <code>Uber()</code>. <span class="ref">providers/uber/auth.go:17</span></span></li>
+          <li><span>Add a brand+country → market map and <code>AGG_DEFAULTMARKET</code> (default <code>ph-uk</code>) to <code>Configuration</code>, and put <code>market</code> in the callback body. <span class="ref">internal/config/config.go:39,181</span></span></li>
         </ul></div>
 
       <div class="panel repo"><header><h3>daas-gateway</h3><span class="chip ready">small</span><span class="path">~/dragontail/daas-gateway</span></header>
         <ul class="tasks">
-          <li><span>Add the <code>MarketplaceLocation</code> handler, modelled on <code>callback.go:59-110</code>: validate, <code>SendMessage</code>, reply 202.</span></li>
-          <li><span>Register <code>POST /marketplace/{provider}/locations</code> and add <code>MarketplaceLocationsQueue</code> to <code>config/queue.go</code>.</span></li>
-          <li><span>Rename <code>/mp/{provider}/order/switch</code> to <code>/mp/{provider}/order/delivery</code> in <code>MakeMpProxyHandler</code>. <span class="ref">router.go:153-155</span></span></li>
-          <li><span>Confirm <code>/api/v2/deliveries</code> honours <code>aggProvider</code> with no fan-out.</span></li>
+          <li><span>Add the <code>MarketplaceCallback</code> handler, modelled on <code>callback.go:59-110</code>: require <code>orderId</code>, <code>storeNo</code> and <code>status</code> (<code>location</code> is optional), then <code>SendMessage</code> and reply 202.</span></li>
+          <li><span>Register <code>POST /marketplace/{provider}/callbacks</code> and add <code>MarketplaceCallbacksQueue</code> to <code>config/queue.go</code>.</span></li>
+          <li class="del"><span>Remove <code>/mp/{provider}/order/switch</code> from <code>MakeMpProxyHandler</code>. <code>/order/status</code> and <code>/order/events</code> stay. <span class="ref">router.go:153-155</span></span></li>
+          <li><span>Make <code>/api/v2/deliveries</code> forward to the given <code>aggProvider</code> only, with no fan-out (decided). Check what it does today first. <span class="ref">router.go:92-103</span></span></li>
           <li><span>Add a handler test with <code>httptest</code> and a buffered <code>messages</code> channel.</span></li>
         </ul></div>
 
       <div class="panel repo"><header><h3>tracker-service</h3><span class="chip decide">medium</span><span class="path">~/dragontail/tracker-service</span></header>
         <ul class="tasks">
-          <li><span>Add <code>amqp091-go</code> and <code>consumers/marketplaceLocations.go</code>, started from <code>StartUp()</code> behind <code>RABBITMQ_ENABLED</code>. <span class="ref">configuration/startup.go:115</span></span></li>
-          <li><span>Map brand+country to market, then write a <code>LocationDto</code> with the existing repository call (same key as Proxy points). <span class="ref">ordersRepository.go:404</span></span></li>
-          <li><span>Add RabbitMQ settings to <code>configuration.yaml</code>, and set <code>REDIS_MAX_LOCATIONS_PER_ORDER</code>.</span></li>
+          <li><span>Add <code>amqp091-go</code> and <code>consumers/marketplaceCallbacks.go</code>, started from <code>StartUp()</code> behind <code>RABBITMQ_ENABLED</code>. <span class="ref">configuration/startup.go:115</span></span></li>
+          <li><span>Take <code>market</code> from the message (fall back to <code>DEFAULT_MARKET</code>), then append the callback to the <code>mpcallbacks</code> list. If it has a location, also write a <code>LocationDto</code> with the existing repository call (same key as Proxy points). <span class="ref">ordersRepository.go:404</span></span></li>
+          <li><span>Add each new point and order event to the order's forwarding source (<code>tr-svc:fwd:…</code>), so the existing forwarding job pushes them to subscribers. Map Uber Direct statuses to the order-event types mp-uber understands. <span class="ref">types/consts.go:34-36</span></span></li>
+          <li><span>Add RabbitMQ settings to <code>configuration.yaml</code>, and set <code>REDIS_MAX_LOCATIONS_PER_ORDER=360</code>.</span></li>
           <li><span>Align the Dockerfile Go version with <code>go.mod</code> (1.23.4 vs 1.25).</span></li>
-          <li><span>Add a testify suite with <code>redismock</code>: valid message, bad JSON, unknown market.</span></li>
+          <li><span>Add a testify suite with <code>redismock</code>: callback with a location, callback without a location, bad JSON, unknown market.</span></li>
         </ul></div>
 
       <div class="panel repo"><header><h3>mp-uber</h3><span class="chip decide">medium</span><span class="path">~/dragontail/mp-uber</span></header>
         <ul class="tasks">
-          <li><span>Replace <code>POST order/switch</code> (role <code>algo</code>) with <code>POST order/delivery</code>. It parses the create-delivery body and upserts the row with <code>pullLocations = true</code>. No Uber Eats call. <span class="ref">controllers/…EventsController.go:65</span></span></li>
-          <li class="del"><span>Delete <code>SwitchToUberDelivery</code>, <code>SwitchToUberDeliveryRequest</code>, the switch DTO and <code>DELIVERY_BY_UBER</code>. <span class="ref">uberMpEventsService.go:172-195 · types/types.go:25 · types/mpDtos.go:36 · types/consts.go:41</span></span></li>
-          <li><span>Add migration: <code>pullLocations boolean NOT NULL DEFAULT false</code> and <code>lastLocationTs bigint NULL</code> on <code>marketplaceorderstatus</code>.</span></li>
-          <li><span>Add <code>jobs/pullLocationsJob.go</code> with its <code>configuration.yaml</code> entry and <code>JOB_PULL_LOCATIONS_INTERVAL</code>.</span></li>
-          <li><span>Resolve <code>externalStoreId</code> from <code>StoresConfigurationMap</code> in the poller.</span></li>
-          <li class="del"><span>Once the poller is live, remove the tracker v2 subscription and <code>POST order/events</code> so no point is sent twice. <span class="ref">uberMpEventsService.go:99-116</span></span></li>
+          <li class="del"><span>Delete <code>POST order/switch</code>, <code>SwitchToUberDelivery</code>, <code>SwitchToUberDeliveryRequest</code>, the switch DTO and <code>DELIVERY_BY_UBER</code>. <span class="ref">controllers/…EventsController.go:65 · uberMpEventsService.go:172-195 · types/types.go:25 · types/mpDtos.go:36 · types/consts.go:41</span></span></li>
+          <li><span>Keep the <code>NewOrderMakeline</code> row insert and tracker subscription as they are. No new endpoint, job or migration. <span class="ref">uberMpEventsService.go:42, :99-116</span></span></li>
+          <li><span>In <code>processOrderEvents</code>, map the order events that come from Uber Direct statuses to <code>started</code> / <code>delivered</code>. <span class="ref">:253-292</span></span></li>
+          <li><span>Check that the 30 min status dedup stops a double <code>started</code> / <code>delivered</code> when both the push and Algo send it. <span class="ref">:324</span></span></li>
         </ul></div>
     </section>
 
@@ -533,12 +529,11 @@ POST /eats/byoc/restaurants/orders/event/location
       <div class="tablewrap"><table>
         <thead><tr><th>What fails</th><th>Effect</th><th>Handling</th></tr></thead>
         <tbody>
-          <tr><td class="who">Create delivery (1)</td><td>mp-uber never pulls this order's locations</td><td>6 retries through <code>updateMarketPlaceWithDecision</code>. Statuses still reach Uber Eats.</td></tr>
-          <tr><td class="who">NewOrderMakeline (1)</td><td>mp-uber has no row, so no status or location reaches Uber Eats</td><td>6 retries. mp-uber also inserts the row if the first call it sees is EnRoute.</td></tr>
+          <tr><td class="who">NewOrderMakeline (1)</td><td>mp-uber has no row and no subscription, so no location reaches Uber Eats</td><td>6 retries through <code>updateMarketPlaceWithDecision</code>. mp-uber also inserts the row and subscribes if the first call it sees is EnRoute.</td></tr>
           <tr><td class="who">daas-uber booking (2)</td><td>No courier</td><td>Store carrier delivers. Uber Eats sees no difference, because nothing was promised.</td></tr>
-          <tr><td class="who">Location POST (4)</td><td>One point lost</td><td>Logged. The next webhook arrives in about 20 s.</td></tr>
+          <tr><td class="who">Marketplace callback POST (4)</td><td>A callback is missing from tracker's history. Algo still gets it.</td><td>3 attempts, then logged. A lost location is replaced by the next webhook in about 20 s.</td></tr>
           <tr><td class="who">Queue or tracker down (5, 6)</td><td>Points wait</td><td>The queue is durable and messages expire after 15 min. The gateway buffers 2000 in memory <span class="ref">server.go:98</span>.</td></tr>
-          <tr><td class="who">Poller or Uber Eats (7)</td><td>Position lags</td><td>The next tick retries from <code>lastLocationTs</code>. Only the newest point is sent.</td></tr>
+          <tr><td class="who">Forwarding push or Uber Eats (7)</td><td>Position lags</td><td>The forwarding job's existing retry and source TTL (15 min) apply. mp-uber sends only the newest point.</td></tr>
         </tbody>
       </table></div>
     </section>
@@ -548,21 +543,22 @@ POST /eats/byoc/restaurants/orders/event/location
       <div class="cols">
         <div class="panel"><h4>Order of release</h4>
           <ul class="tasks">
-            <li><span>Provision Redis and the queue in EMEA. Deploy tracker-service with the consumer.</span></li>
-            <li><span>Deploy daas-gateway with the new location route and <code>/mp/{provider}/order/delivery</code>. Keep the switch route until algo is released.</span></li>
+            <li><span>DevOps (separate ticket): provision Redis and the queue in EMEA, and deploy tracker-service with the consumer.</span></li>
+            <li><span>Deploy daas-gateway with the new callbacks route. Keep the switch route until algo is released.</span></li>
             <li><span>Deploy daas-uber with the migration. It only acts when <code>marketplace</code> is set.</span></li>
-            <li><span>Deploy the mp-uber poller and run it alongside the push subscription with sending off. Compare points, then switch.</span></li>
-            <li><span>Deploy algo with the switch replaced by create delivery. Pilot one store through <code>Aggregators/MPSources</code>.</span></li>
-            <li><span>Remove the old switch route and code, and the push subscription.</span></li>
+            <li><span>Deploy mp-uber with the order-event mapping. The subscription is unchanged.</span></li>
+            <li><span>Deploy algo with the switch replaced by <code>NewOrderMakeline</code>. Pilot one store through <code>Aggregators/MPSources</code>.</span></li>
+            <li><span>Remove the old switch route and code.</span></li>
           </ul></div>
         <div class="panel"><h4>End-to-end check (staging)</h4>
           <ul class="tasks">
-            <li><span>A store-driver order: status and location reach Uber Eats from the poller.</span></li>
+            <li><span>A store-driver order behaves exactly as today.</span></li>
+            <li><span>A DaaS order: <code>NewOrderMakeline</code> creates the tracker subscription, and points from the queue are pushed to <code>/mp/uber/order/events</code>.</span></li>
             <li><span>A DaaS order: the <code>algo_discovery</code> row has <code>marketplace='uber'</code>.</span></li>
-            <li><span>Each webhook gives one Algo callback and one location POST, both 202.</span></li>
+            <li><span>Each webhook, including <code>delivered</code>, gives one Algo callback and one marketplace callback POST, both 202.</span></li>
             <li><span>The Redis key grows and its <code>TTL</code> is about 86400.</span></li>
-            <li><span><code>started</code> on pickup, then locations, then <code>delivered</code>.</span></li>
-            <li><span>A normal daas-uber delivery sends no location POST.</span></li>
+            <li><span>Uber Eats gets <code>started</code>, then locations, then <code>delivered</code>, each status once.</span></li>
+            <li><span>A normal daas-uber delivery sends no marketplace callback.</span></li>
           </ul></div>
       </div>
     </section>
@@ -570,10 +566,16 @@ POST /eats/byoc/restaurants/orders/event/location
     <section id="decisions">
       <h2><span class="n">09</span>Open decisions</h2>
       <div class="cols">
-        <div class="panel stripe decide"><span class="chip decide">decide</span><h3>Market in tracker</h3><p>The Redis key needs a market (<code>ph-uk</code>), but the message has brand and country. <b>Recommendation:</b> map brand+country to market in tracker config, with <code>DEFAULT_MARKET</code> as the fallback.</p></div>
-        <div class="panel stripe decide"><span class="chip decide">decide</span><h3>"All" locations</h3><p>The list is capped at 100 points today. <b>Recommendation:</b> 360 points (2 h at 20 s), with TTL 24 h.</p></div>
-        <div class="panel stripe decide"><span class="chip decide">decide</span><h3>Auth on the new route</h3><p>Callbacks and <code>/mp/*</code> have no auth, and the JWT <code>Authenticator</code> is never mounted <span class="ref">daas-gateway api/middleware/authenticator.go:14</span>. <b>Recommendation:</b> match callbacks for the pilot, then add service JWT.</p></div>
-        <div class="panel stripe decide"><span class="chip decide">decide</span><h3>Pull for every order</h3><p>Moving store-driver orders from push to pull touches live UK traffic. <b>Recommendation:</b> run both side by side for a week (step 4 of the rollout) before removing push.</p></div>
+        <div class="panel stripe ready"><span class="chip ready">decided</span><h3>Market</h3><p>daas-uber sends <code>market</code> in the callback body. Its default is <code>AGG_DEFAULTMARKET</code>, and tracker-service falls back to <code>DEFAULT_MARKET</code>.</p></div>
+        <div class="panel stripe ready"><span class="chip ready">decided</span><h3>Points per order</h3><p>360 points (about 2 h at 20 s), with a 24 h TTL.</p></div>
+        <div class="panel stripe ready"><span class="chip ready">decided</span><h3>Auth on the new route</h3><p>For the pilot, none, the same as callbacks. Later, mount the existing JWT <code>Authenticator</code> <span class="ref">daas-gateway api/middleware/authenticator.go:14</span> on both routes.</p></div>
+        <div class="panel stripe ready"><span class="chip ready">decided</span><h3>No polling</h3><p>mp-uber uses the existing tracker subscription and forwarding job. There is no poller and no push-to-pull cutover.</p></div>
+        <div class="panel stripe ready"><span class="chip ready">decided</span><h3>One call to mp-uber</h3><p>The switch, create delivery and <code>NewOrderMakeline</code> are merged into one request, <code>NewOrderMakeline</code>.</p></div>
+        <div class="panel stripe decide"><span class="chip decide">asked Sergey</span><h3>Which Uber Direct status means started?</h3><p>Order events are now pushed, so mp-uber can send <code>started</code> before Algo reaches EnRoute (Algo only does at <code>dropoff</code>). Options: <code>pickup</code> (courier assigned), <code>pickup_complete</code>, or <code>dropoff</code>.</p></div>
+        <div class="panel stripe"><span class="chip keep">out of scope</span><h3>Uber Direct cancels or returns</h3><p>The order is already registered with mp-uber when Uber Direct reports <code>canceled</code> or <code>returned</code>. Undecided: hand it back to a store driver (points then come from the Proxy on the same key), rebook daas-uber, or report a failure to Uber Eats.</p></div>
+        <div class="panel stripe"><span class="chip keep">out of scope</span><h3>Uber Direct webhook signature</h3><p>daas-uber never calls <code>Uber.AuthWebhook</code> <span class="ref">providers/uber/auth.go:17</span>, so webhooks are not verified. It stays that way in this change.</p></div>
+        <div class="panel stripe ready"><span class="chip ready">decided</span><h3>Statuses pushed too</h3><p>tracker-service pushes the Uber Direct statuses to mp-uber as order events. Algo's statuses still arrive, and the 30 min dedup prevents double calls to Uber Eats.</p></div>
+        <div class="panel stripe ready"><span class="chip ready">decided</span><h3>daas-uber only</h3><p>Algo sets <code>aggProvider=uber</code> and skips the quote. The gateway honours <code>aggProvider</code> and forwards to daas-uber only.</p></div>
       </div>
     </section>
   </main>
