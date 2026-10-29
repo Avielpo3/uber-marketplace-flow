@@ -150,6 +150,7 @@ pre.code i{color:var(--muted);font-style:normal}
     <a href="#verification"><span>21</span>Verification log</a>
     <a href="#restored"><span>22</span>Restored from v6</a>
     <a href="#qa"><span>23</span>QA state on 2026-10-29</a>
+    <a href="#decisions-1029"><span>24</span>Decisions and fixes, 2026-10-29</a>
   </nav>
 
   <main>
@@ -2262,6 +2263,18 @@ const (
           <tr><td class="who">BUG</td><td>mp-uber QA logs every 10 min "Failed to get token from marketplace API" for market <code>ph-il</code> (login.uber.com).</td></tr>
           <tr><td class="who">LIMIT</td><td>daas-uber in QA calls Uber through <code>mock-api-qa.daas.dtsys.cc</code>, so O-3 (Uber accepts DaaS-courier status and location) cannot be verified in QA.</td></tr>
           <tr><td class="who">CONFIG</td><td>Algo books Uber Direct only when the store's <code>MarketPlaceConfiguration.daas</code> is <code>"uber-daas"</code>; otherwise Algo calls <code>/order/switch</code> (404 while disabled) and keeps the store driver.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+    <section id="decisions-1029">
+      <h2><span class="n">24</span>Decisions and fixes, 2026-10-29</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>ID</th><th>Decision / fix</th><th>Matches code</th></tr></thead>
+        <tbody>
+          <tr><td class="who">D-17</td><td><b>DaaS-order statuses rely only on the callbacks path.</b> For DaaS-courier orders, Uber Eats <code>started</code> / <code>delivered</code> come only from daas-uber &rarr; gateway <code>/marketplace/uber/callbacks</code> &rarr; <code>marketplace_callbacks</code> &rarr; tracker-service order events (<code>Dispatched</code>, <code>Delivered</code>) &rarr; mp-uber <code>/mp/uber/order/events</code>. Algo is not required to send <code>EnRoute</code> / <code>Delivered</code> for these orders; A-3 no longer applies to DaaS orders.</td><td>Yes: Algo <code>2.65.0_ALGO-2532</code> sends only <code>NewOrderMakeline</code> (<code>AggregatorsAPI.go:3418-3439</code>).</td></tr>
+          <tr><td class="who">D-18</td><td><b><code>daas: "uber-daas"</code> is mandatory in Algo.</b> Every store taking Uber Eats marketplace orders must have <code>MarketPlaceConfiguration.&lt;source&gt;.daas = "uber-daas"</code>. Without it Algo takes the <code>/order/switch</code> path (404 while disabled, retried, then stays with the store driver).</td><td>Yes: <code>Stores.go:312-318</code>, <code>AggregatorsAPI.go:3335-3410</code>.</td></tr>
+          <tr><td class="who">F-1</td><td><b>QA market aligned to <code>ph-uk</code>.</b> mp-uber QA DB: <code>keys</code> id 6 (UK brand) and 575 <code>marketplacestores</code> rows renamed <code>phtest-uk</code> &rarr; <code>ph-uk</code>; mp-uber restarted.</td><td>Yes: gateway <code>marketplaceCallback.go:17,57-59</code>; mp-uber <code>authService.go:108-119</code>.</td></tr>
+          <tr><td class="who">F-2</td><td><b>Root cause of <code>pq: column "orderuid" does not exist</code>.</b> Commit <code>cdad07d</code> added the insert with <code>orderUID</code> (<code>bulkInsert.sql:1</code>, <code>sqlQueriesBuffer.go:50</code>, <code>types/types.go:168</code>) but <code>_migrations/1_createTables.sql:32-42</code> has no such column. Every raw-request insert fails; nothing sets or reads the field. Recommended: drop <code>orderUID</code> from insert, format string and struct; alternative: migration <code>4_addRawRequestOrderUid.sql</code> adding <code>orderUID TEXT NULL</code>. Owner: mp-uber (DAAS-638).</td><td>Yes (evidence above). Not fixed yet.</td></tr>
         </tbody>
       </table></div>
     </section>
