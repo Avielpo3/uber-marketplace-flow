@@ -2388,3 +2388,7 @@ The full flow passed at 12:36–12:38 UTC with order `7779`, `aggOrderId` `7b59f
 | Store 7507 and its order registered in the Uber Eats mock (G-8) | QA mock state | n/a |
 
 All three mock-api commits are on branch `feature/DAAS-637-mock-courier-locations-and-mp-event-log`, tagged `2.0.2_dev` and `2.0.3_dev`, and deployed to QA through the CircleCI `cd` workflow (parameters `version` and `env` only; this pipeline has no `aws_account`).
+
+### 26.4 Visual chain
+
+[`chain.html`](chain.html) shows this run hop by hop: a timeline per service with every status and courier location, the courier path with the points Uber Eats received, the step-by-step mapping and the status codes. It is built from `dt-chain 7779 --json` (`~/dragontail/.claude/skills/dragontail-access/scripts/dt-chain`), which prints the same timeline for any order.

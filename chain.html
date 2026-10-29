@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Marketplace Order Chain</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=Source+Sans+3:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: one column. Swimlane timeline of a real order across the six hops, then the courier path, the step-by-step mapping, the status codes and the raw timeline */
+:root{
+  --bg:#f4f5f2; --surface:#ffffff; --sunk:#eceee9; --fg:#1b211d; --muted:#5a6560; --line:#d6dbd5;
+  --ctl:#1f6b4f; --ctl-soft:#e1efe8; --loc:#2f5bd0; --loc-soft:#e5ebfb; --drop:#946200; --drop-soft:#f8efd6;
+  --display:"Source Serif 4", Georgia, serif; --body:"Source Sans 3", system-ui, sans-serif; --mono:"JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme:light; box-sizing:border-box;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111513; --surface:#181d1a; --sunk:#1e2420; --fg:#e3e8e4; --muted:#97a39c; --line:#2b332e;
+  --ctl:#6fcca6; --ctl-soft:#173027; --loc:#8eaaff; --loc-soft:#1b2440; --drop:#e7bb5a; --drop-soft:#342913; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111513; --surface:#181d1a; --sunk:#1e2420; --fg:#e3e8e4; --muted:#97a39c; --line:#2b332e;
+  --ctl:#6fcca6; --ctl-soft:#173027; --loc:#8eaaff; --loc-soft:#1b2440; --drop:#e7bb5a; --drop-soft:#342913; color-scheme:dark}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 var(--body)}
+main{max-width:1280px;margin:0 auto;padding:36px max(16px,env(safe-area-inset-right,0px)) 72px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:48px}
+h1{font:700 clamp(30px,5vw,44px)/1.1 var(--display);margin:0;letter-spacing:-.01em;text-wrap:balance}
+h2{font:600 24px/1.2 var(--display);margin:0}
+p{margin:0;max-width:100ch}
+a{color:var(--ctl)}
+code{font-family:var(--mono);font-size:.84em;background:var(--sunk);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+section{display:flex;flex-direction:column;gap:16px;min-width:0}
+main>*,section>*{min-width:0;max-width:100%}
+html,body{overflow-x:hidden}
+.eyebrow{font:600 12px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ctl)}
+.lede{font-size:18px;color:var(--muted)}
+.meta{display:flex;flex-wrap:wrap;gap:6px 20px;font:13px var(--mono);color:var(--muted)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 20px;min-width:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:12px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:2px}
+.stat b{font:600 26px/1.1 var(--display)} .stat span{font-size:13px;color:var(--muted)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:14px;color:var(--muted);align-items:center}
+.sw{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+.sw.s{background:var(--ctl)} .sw.l{background:var(--loc)} .sw.d{background:transparent;border:2px solid var(--drop)}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+svg text{font-family:var(--body)}
+.lane-label{font:600 13px var(--body);fill:var(--fg)} .lane-sub{font:11px var(--mono);fill:var(--muted)}
+.axis{font:11px var(--mono);fill:var(--muted)}
+.tip{position:fixed;pointer-events:none;background:var(--fg);color:var(--bg);font:13px/1.4 var(--body);padding:8px 10px;border-radius:6px;max-width:340px;opacity:0;transition:opacity .1s;z-index:9}
+.tip b{font-family:var(--mono);font-size:12px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:600 12px var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:var(--sunk)}
+td.mono,td code{font-family:var(--mono);font-size:12.5px}
+tr.hl td{background:var(--ctl-soft)} tr.hll td{background:var(--loc-soft)}
+.pill{display:inline-block;font:600 11px var(--mono);padding:1px 7px;border-radius:999px}
+.pill.s{background:var(--ctl-soft);color:var(--ctl)} .pill.l{background:var(--loc-soft);color:var(--loc)} .pill.d{background:var(--drop-soft);color:var(--drop)}
+.filters{display:flex;flex-wrap:wrap;gap:8px}
+.filters button{font:500 13px var(--body);border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:4px 12px;border-radius:999px;cursor:pointer}
+.filters button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px}
+pre{margin:0;background:var(--sunk);border-radius:8px;padding:12px 14px;overflow-x:auto;font:13px/1.5 var(--mono)}
+</style></head>
+<body>
+<main>
+  <header style="display:flex;flex-direction:column;gap:12px">
+    <span class="eyebrow">Uber marketplace flow · QA · 2026-10-29</span>
+    <h1>One order, every hop</h1>
+    <p class="lede">The real chain of order <code id="h-order"></code>, from the Uber Direct webhooks to what Uber Eats accepted: which statuses and courier locations each service sent, and which ones stop on the way.</p>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section>
+    <div class="stats" id="stats"></div>
+  </section>
+
+  <section>
+    <h2>Timeline by hop</h2>
+    <p>Each dot is one message seen at that hop. Hover or tap a dot for the details. A webhook goes straight down the lanes within about 50 ms; only <code>PickedUp</code> and <code>Delivered</code> become Uber Eats statuses, and locations wait for tracker's 30 s forwarding job, which sends the newest point only.</p>
+    <div class="legend"><span><i class="sw s"></i>status</span><span><i class="sw l"></i>courier location</span><span><i class="sw d"></i>stops here: status not sent to Uber Eats, or location replaced by a newer point before forwarding</span></div>
+    <div class="panel scroll"><svg id="lanes" role="img" aria-label="Swimlane timeline of the order across six services"></svg></div>
+  </section>
+
+  <section>
+    <h2>Courier path</h2>
+    <p>The Uber Direct mock moves the courier on a straight line from the store to the customer (15 % to 75 % of the way). All 5 points reach tracker-service; Uber Eats receives the 3 that were newest when the forwarding job ran.</p>
+    <div class="cols">
+      <div class="panel"><svg id="map" role="img" aria-label="Courier positions between store and customer"></svg></div>
+      <div class="panel scroll"><table id="loc-table"><thead><tr><th>Point</th><th>Sent by Uber Direct</th><th>Reached Uber Eats</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Step by step: what each hop sends</h2>
+    <p>The two numbers are the <b>delivery status</b> and the <b>courier status</b> daas-uber puts on every status callback (codes below). tracker-service turns delivery status 3 into the order event <code>Dispatched</code> and 4 into <code>Delivered</code>; mp-uber sends those to Uber Eats as <code>started</code> and <code>delivered</code>. Everything else is stored but not sent to Uber Eats.</p>
+    <div class="panel scroll"><table>
+      <thead><tr><th>Step</th><th>Uber Direct webhook</th><th>daas-uber → gateway → RabbitMQ</th><th>tracker → mp-uber</th><th>mp-uber → Uber Eats</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><code>pending</code></td><td>Scheduled / Unassigned <code>1/0</code></td><td>not pushed</td><td><span class="pill d">nothing</span></td></tr>
+        <tr><td>2</td><td><code>pickup</code></td><td>Assigned / EnrouteToPickup <code>2/2</code></td><td>not pushed</td><td><span class="pill d">nothing</span></td></tr>
+        <tr><td>3</td><td><code>pickup</code></td><td>Assigned / ArrivedAtStore <code>2/3</code></td><td>not pushed</td><td><span class="pill d">nothing</span></td></tr>
+        <tr class="hl"><td>4</td><td><code>dropoff</code></td><td>PickedUp / EnrouteToDropoff <code>3/5</code></td><td><code>Dispatched</code> (orderStatus 5)</td><td><span class="pill s">started</span></td></tr>
+        <tr class="hll"><td>5–9</td><td>5 × <code>courier_update</code></td><td><code>locationUpdate</code> lat / lng</td><td>forwarding job every 30 s, newest point</td><td><span class="pill l">BYOC location</span> only while <code>started</code></td></tr>
+        <tr><td>10</td><td><code>dropoff</code>, courier imminent</td><td>PickedUp / Nearby <code>3/8</code></td><td><code>Dispatched</code> again</td><td><span class="pill d">nothing</span> (already started, 30 min dedup)</td></tr>
+        <tr class="hl"><td>11</td><td><code>delivered</code></td><td>Delivered / DroppedOff <code>4/7</code></td><td><code>Delivered</code> (orderStatus 6)</td><td><span class="pill s">delivered</span>, subscription removed</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Status codes</h2>
+    <div class="cols">
+      <div class="panel scroll"><table><thead><tr><th>Delivery status</th><th>Name</th></tr></thead><tbody id="t-delivery"></tbody></table></div>
+      <div class="panel scroll"><table><thead><tr><th>Courier status</th><th>Name</th></tr></thead><tbody id="t-courier"></tbody></table></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Every message</h2>
+    <div class="filters" id="filters"></div>
+    <div class="panel scroll"><table id="events"><thead><tr><th>Time (UTC)</th><th>Hop</th><th>Kind</th><th>Message</th><th>Detail</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section>
+    <h2>Get this for any order</h2>
+    <p><code>dt-chain</code> (in <code>~/dragontail/.claude/skills/dragontail-access/scripts</code>) reads every hop and prints the same timeline; <code>--json</code> writes the data this page is built from. tracker-service logs need the Pritunl VPN.</p>
+    <pre>dt-chain 7779
+dt-chain 7779 --from now-1d --json chain-7779.json</pre>
+    <p>Sources per hop: Uber Direct mock and daas-uber, gateway logs in Datadog; tracker-service pod logs (<code>kubectl -n cloud</code>); mp-uber <code>rawrequestdata</code>; Uber Eats mock <code>GET /mp-uber/order/&lt;aggOrderId&gt;</code>. Spec: <a href="./">HLD</a> §20 (status chain), §25 (gotchas), §26 (this run).</p>
+  </section>
+</main>
+<div class="tip" id="tip" role="tooltip"></div>
+
+<script id="chain-data" type="application/json">{"summary": {"orderId": "7779", "deliveryId": "del_MO4CMzSCZsUZM-if69UA4Z", "aggOrderId": "7b59fc76-046c-460c-8ac3-481b651b7098", "store": "7507", "daasUber": {"order_id": "7779", "agg_id": "del_MO4CMzSCZsUZM-if69UA4Z", "store_id": "7507", "brand_id": "Pizza Hut-United Kingdom", "franchisee": "GH Pizza LTD", "marketplace": "uber", "delivery_status": 4, "courier_status": 7, "created_at": "2026-10-29T12:36:39.294302+00:00", "updated_at": "2026-10-29T12:38:29.337738+00:00"}, "mpUber": {"orderid": "7779", "aggorderid": "7b59fc76-046c-460c-8ac3-481b651b7098", "storeno": "7507", "orderstatus": "delivered", "updatedat": "2026-10-29T12:38:29.423938", "errormessage": null}, "uberEats": {"order_status": "delivered", "courier_location": {"point": {"latitude": 51.513474, "longitude": -0.138375}, "time": {"epochMillis": 1793277489378}}}}, "events": [{"time": "2026-10-29T12:36:38.929Z", "hop": "tracker", "kind": "subscription", "what": "subscription added", "detail": "market::dt-dev::store::7507::order::7779::event::location;order"}, {"time": "2026-10-29T12:36:49.000Z", "hop": "gateway", "kind": "status", "what": "queued pending", "detail": "Scheduled / Unassigned (1/0), market dt-dev"}, {"time": "2026-10-29T12:36:49.382Z", "hop": "uber-direct", "kind": "status", "what": "delivery_status", "detail": "Scheduled / Unassigned (1/0) (step 1)"}, {"time": "2026-10-29T12:36:49.389Z", "hop": "daas-uber", "kind": "status", "what": "orderStatusUpdate pending", "detail": "Scheduled / Unassigned (1/0)"}, {"time": "2026-10-29T12:36:49.405Z", "hop": "tracker", "kind": "status", "what": "order event to subscribers", "detail": "subscriptions checked 14, market dt-dev"}, {"time": "2026-10-29T12:36:59.000Z", "hop": "gateway", "kind": "status", "what": "queued pickup", "detail": "Assigned / EnrouteToPickup (2/2), market dt-dev"}, {"time": "2026-10-29T12:36:59.361Z", "hop": "uber-direct", "kind": "status", "what": "delivery_status", "detail": "Assigned / EnrouteToPickup (2/2) (step 2)"}, {"time": "2026-10-29T12:36:59.369Z", "hop": "daas-uber", "kind": "status", "what": "orderStatusUpdate pickup", "detail": "Assigned / EnrouteToPickup (2/2)"}, {"time": "2026-10-29T12:36:59.385Z", "hop": "tracker", "kind": "status", "what": "order event to subscribers", "detail": "subscriptions checked 14, market dt-dev"}, {"time": "2026-10-29T12:37:09.000Z", "hop": "gateway", "kind": "status", "what": "queued pickup", "detail": "Assigned / ArrivedAtStore (2/3), market dt-dev"}, {"time": "2026-10-29T12:37:09.353Z", "hop": "uber-direct", "kind": "status", "what": "delivery_status", "detail": "Assigned / ArrivedAtStore (2/3) (step 3)"}, {"time": "2026-10-29T12:37:09.361Z", "hop": "daas-uber", "kind": "status", "what": "orderStatusUpdate pickup", "detail": "Assigned / ArrivedAtStore (2/3)"}, {"time": "2026-10-29T12:37:09.375Z", "hop": "tracker", "kind": "status", "what": "order event to subscribers", "detail": "subscriptions checked 14, market dt-dev"}, {"time": "2026-10-29T12:37:19.000Z", "hop": "gateway", "kind": "status", "what": "queued dropoff", "detail": "PickedUp / EnrouteToDropoff (3/5), market dt-dev"}, {"time": "2026-10-29T12:37:19.371Z", "hop": "uber-direct", "kind": "status", "what": "delivery_status", "detail": "PickedUp / EnrouteToDropoff (3/5) (step 4)"}, {"time": "2026-10-29T12:37:19.379Z", "hop": "daas-uber", "kind": "status", "what": "orderStatusUpdate dropoff", "detail": "PickedUp / EnrouteToDropoff (3/5)"}, {"time": "2026-10-29T12:37:19.394Z", "hop": "tracker", "kind": "status", "what": "order event to subscribers", "detail": "subscriptions checked 14, market dt-dev"}, {"time": "2026-10-29T12:37:19.456Z", "hop": "uber-eats", "kind": "status", "what": "received started", "detail": "accepted"}, {"time": "2026-10-29T12:37:19.457Z", "hop": "mp-uber", "kind": "status", "what": "Uber Eats status started", "detail": "HTTP 200"}, {"time": "2026-10-29T12:37:29.000Z", "hop": "gateway", "kind": "location", "what": "queued locationUpdate", "detail": "market dt-dev"}, {"time": "2026-10-29T12:37:29.354Z", "hop": "uber-direct", "kind": "location", "what": "courier_update", "detail": "lat 51.508615 lng -0.129915 (step 5)"}, {"time": "2026-10-29T12:37:29.362Z", "hop": "daas-uber", "kind": "location", "what": "locationUpdate", "detail": "lat 51.508614 lng -0.129915"}, {"time": "2026-10-29T12:37:39.000Z", "hop": "gateway", "kind": "location", "what": "queued locationUpdate", "detail": "market dt-dev"}, {"time": "2026-10-29T12:37:39.354Z", "hop": "uber-direct", "kind": "location", "what": "courier_update", "detail": "lat 51.50983 lng -0.13203 (step 6)"}, {"time": "2026-10-29T12:37:39.364Z", "hop": "daas-uber", "kind": "location", "what": "locationUpdate", "detail": "lat 51.50983 lng -0.13203"}, {"time": "2026-10-29T12:37:47.668Z", "hop": "uber-eats", "kind": "location", "what": "received location", "detail": "lat 51.50983 lng -0.13203, accepted"}, {"time": "2026-10-29T12:37:47.669Z", "hop": "mp-uber", "kind": "location", "what": "Uber Eats BYOC location", "detail": "lat 51.50983 lng -0.13203, HTTP 202"}, {"time": "2026-10-29T12:37:49.000Z", "hop": "gateway", "kind": "location", "what": "queued locationUpdate", "detail": "market dt-dev"}, {"time": "2026-10-29T12:37:49.361Z", "hop": "uber-direct", "kind": "location", "what": "courier_update", "detail": "lat 51.511045 lng -0.134145 (step 7)"}, {"time": "2026-10-29T12:37:49.365Z", "hop": "daas-uber", "kind": "location", "what": "locationUpdate", "detail": "lat 51.511044 lng -0.134145"}, {"time": "2026-10-29T12:37:55.043Z", "hop": "uber-eats", "kind": "location", "what": "received location", "detail": "lat 51.511044 lng -0.134145, accepted"}, {"time": "2026-10-29T12:37:55.045Z", "hop": "mp-uber", "kind": "location", "what": "Uber Eats BYOC location", "detail": "lat 51.511044 lng -0.134145, HTTP 202"}, {"time": "2026-10-29T12:37:59.000Z", "hop": "gateway", "kind": "location", "what": "queued locationUpdate", "detail": "market dt-dev"}, {"time": "2026-10-29T12:37:59.347Z", "hop": "uber-direct", "kind": "location", "what": "courier_update", "detail": "lat 51.51226 lng -0.13626 (step 8)"}, {"time": "2026-10-29T12:37:59.350Z", "hop": "daas-uber", "kind": "location", "what": "locationUpdate", "detail": "lat 51.51226 lng -0.13626"}, {"time": "2026-10-29T12:38:09.000Z", "hop": "gateway", "kind": "location", "what": "queued locationUpdate", "detail": "market dt-dev"}, {"time": "2026-10-29T12:38:09.369Z", "hop": "uber-direct", "kind": "location", "what": "courier_update", "detail": "lat 51.513475 lng -0.138375 (step 9)"}, {"time": "2026-10-29T12:38:09.373Z", "hop": "daas-uber", "kind": "location", "what": "locationUpdate", "detail": "lat 51.513474 lng -0.138375"}, {"time": "2026-10-29T12:38:17.674Z", "hop": "uber-eats", "kind": "location", "what": "received location", "detail": "lat 51.513474 lng -0.138375, accepted"}, {"time": "2026-10-29T12:38:17.676Z", "hop": "mp-uber", "kind": "location", "what": "Uber Eats BYOC location", "detail": "lat 51.513474 lng -0.138375, HTTP 202"}, {"time": "2026-10-29T12:38:19.000Z", "hop": "gateway", "kind": "status", "what": "queued dropoff", "detail": "PickedUp / Nearby (3/8), market dt-dev"}, {"time": "2026-10-29T12:38:19.363Z", "hop": "uber-direct", "kind": "status", "what": "delivery_status", "detail": "PickedUp / Nearby (3/8) (step 10)"}, {"time": "2026-10-29T12:38:19.367Z", "hop": "daas-uber", "kind": "status", "what": "orderStatusUpdate dropoff", "detail": "PickedUp / Nearby (3/8)"}, {"time": "2026-10-29T12:38:19.380Z", "hop": "tracker", "kind": "status", "what": "order event to subscribers", "detail": "subscriptions checked 14, market dt-dev"}, {"time": "2026-10-29T12:38:29.000Z", "hop": "gateway", "kind": "status", "what": "queued delivered", "detail": "Delivered / DroppedOff (4/7), market dt-dev"}, {"time": "2026-10-29T12:38:29.346Z", "hop": "uber-direct", "kind": "status", "what": "delivery_status", "detail": "Delivered / DroppedOff (4/7) (step 11)"}, {"time": "2026-10-29T12:38:29.349Z", "hop": "daas-uber", "kind": "status", "what": "orderStatusUpdate delivered", "detail": "Delivered / DroppedOff (4/7)"}, {"time": "2026-10-29T12:38:29.365Z", "hop": "tracker", "kind": "status", "what": "order event to subscribers", "detail": "subscriptions checked 14, market dt-dev"}, {"time": "2026-10-29T12:38:29.421Z", "hop": "uber-eats", "kind": "status", "what": "received delivered", "detail": "accepted"}, {"time": "2026-10-29T12:38:29.422Z", "hop": "mp-uber", "kind": "status", "what": "Uber Eats status delivered", "detail": "HTTP 200"}]}</script>
+<script>
+(function(){
+  var data = JSON.parse(document.getElementById('chain-data').textContent);
+  var S = data.summary, E = data.events;
+  var HOPS = [
+    {id:'uber-direct', name:'Uber Direct (mock)', sub:'webhooks to daas-uber'},
+    {id:'daas-uber', name:'daas-uber', sub:'marketplace callback'},
+    {id:'gateway', name:'gateway → RabbitMQ', sub:'marketplace_callbacks'},
+    {id:'tracker', name:'tracker-service', sub:'order events / forwarding'},
+    {id:'mp-uber', name:'mp-uber', sub:'calls to Uber Eats'},
+    {id:'uber-eats', name:'Uber Eats (mock)', sub:'accepted by marketplace'}
+  ];
+  var DEL = ['Waiting','Scheduled','Assigned','PickedUp','Delivered','Cancelled','CouldNotDeliver','CourierLogin'];
+  var COU = ['Unassigned','Accepted','EnrouteToPickup','ArrivedAtStore','CarrierPickedUp','EnrouteToDropoff','ArrivedToCustomer','DroppedOff','Nearby'];
+  var ns = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs, parent){ var n=document.createElementNS(ns,tag); for(var k in attrs) n.setAttribute(k,attrs[k]); if(parent) parent.appendChild(n); return n; }
+  function t(s){ return new Date(s).getTime(); }
+  function hhmmss(s){ return s.slice(11,19); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); }
+
+  document.getElementById('h-order').textContent = S.orderId;
+  document.getElementById('meta').innerHTML = [
+    'store '+esc(S.store), 'delivery '+esc(S.deliveryId), 'aggOrderId '+esc(S.aggOrderId), 'market '+esc(((E.find(function(e){return e.hop==='gateway' && / market /.test(e.detail);})||{detail:''}).detail.match(/market (\S+)/)||['',''])[1])
+  ].map(function(x){return '<span>'+x+'</span>';}).join('');
+
+  // a message "stops" at a hop when nothing for it appears further down: statuses other than PickedUp/Delivered stop at tracker,
+  // locations that were not the newest point when the forwarding job ran stop at tracker too
+  var ueLocs = E.filter(function(e){return e.hop==='uber-eats' && e.kind==='location';}).map(function(e){return e.detail.split(',')[0];});
+  function stops(e){
+    if (e.hop!=='tracker' && e.hop!=='uber-direct' && e.hop!=='daas-uber' && e.hop!=='gateway') return false;
+    if (e.kind==='location') { var p=(e.detail.match(/lat [\d.-]+ lng [\d.-]+/)||[''])[0]; if (e.hop==='gateway') { var src=E.filter(function(d){return d.hop==='daas-uber' && d.kind==='location' && Math.abs(t(d.time)-t(e.time))<1500;})[0]; p=src?src.detail:''; return !ueLocs.some(function(u){return close(u,p);}); } return false; }
+    return false;
+  }
+  function close(a,b){ var A=a.match(/[\d.-]+/g), B=b.match(/[\d.-]+/g); if(!A||!B) return false; return Math.abs(A[0]-B[0])<1e-5 && Math.abs(A[1]-B[1])<1e-5; }
+
+  var count = function(h,k){ return E.filter(function(e){return e.hop===h && (!k||e.kind===k);}).length; };
+  var stats = [
+    [count('uber-direct'), 'webhooks from Uber Direct'],
+    [count('daas-uber'), 'marketplace callbacks sent'],
+    [count('gateway'), 'messages queued in RabbitMQ'],
+    [count('uber-eats','status')+' + '+count('uber-eats','location'), 'statuses + locations Uber Eats accepted'],
+    [esc((S.uberEats||{}).order_status||'?'), 'final status in Uber Eats']
+  ];
+  document.getElementById('stats').innerHTML = stats.map(function(s){return '<div class="stat"><b>'+s[0]+'</b><span>'+s[1]+'</span></div>';}).join('');
+
+  // swimlanes
+  var svg = document.getElementById('lanes'), tip = document.getElementById('tip');
+  var LW = 190, LH = 58, PAD = 26, W = Math.max(900, svg.parentNode.clientWidth - 40), H = PAD + HOPS.length*LH + 34;
+  svg.setAttribute('viewBox','0 0 '+W+' '+H); svg.setAttribute('width',W); svg.setAttribute('height',H);
+  var t0 = Math.min.apply(null,E.map(function(e){return t(e.time);})) - 3000, t1 = Math.max.apply(null,E.map(function(e){return t(e.time);})) + 3000;
+  function x(ts){ return LW + (t(ts)-t0)/(t1-t0)*(W-LW-16); }
+  var css = getComputedStyle(document.documentElement);
+  HOPS.forEach(function(h,i){
+    var y = PAD + i*LH;
+    el('rect',{x:0,y:y,width:W,height:LH,fill:i%2?'var(--surface)':'var(--sunk)',opacity:i%2?1:.55},svg);
+    var lt = el('text',{x:10,y:y+24,'class':'lane-label'},svg); lt.textContent = h.name;
+    var ls = el('text',{x:10,y:y+41,'class':'lane-sub'},svg); ls.textContent = h.sub;
+  });
+  for (var s = Math.ceil(t0/30000)*30000; s < t1; s += 30000) {
+    var gx = LW + (s-t0)/(t1-t0)*(W-LW-16);
+    el('line',{x1:gx,x2:gx,y1:PAD,y2:PAD+HOPS.length*LH,stroke:'var(--line)','stroke-dasharray':'3 4'},svg);
+    var at = el('text',{x:gx,y:PAD+HOPS.length*LH+18,'text-anchor':'middle','class':'axis'},svg); at.textContent = new Date(s).toISOString().slice(11,19);
+  }
+  // connect each webhook to its downstream copies (same second, matching kind)
+  E.filter(function(e){return e.hop==='uber-direct';}).forEach(function(w){
+    var chain = [w];
+    ['daas-uber','gateway','tracker','mp-uber','uber-eats'].forEach(function(h){
+      var c = E.filter(function(e){return e.hop===h && e.kind===w.kind && Math.abs(t(e.time)-t(w.time))<1500;})[0];
+      if (c) chain.push(c);
+    });
+    for (var k=1;k<chain.length;k++){
+      var a=chain[k-1], b=chain[k];
+      el('line',{x1:x(a.time),y1:PAD+HOPS.findIndex(function(h){return h.id===a.hop;})*LH+LH/2,x2:x(b.time),y2:PAD+HOPS.findIndex(function(h){return h.id===b.hop;})*LH+LH/2,stroke:w.kind==='location'?'var(--loc)':'var(--ctl)','stroke-opacity':.35,'stroke-width':1.5},svg);
+    }
+  });
+  E.forEach(function(e){
+    var i = HOPS.findIndex(function(h){return h.id===e.hop;}); if (i<0) return;
+    var cy = PAD + i*LH + LH/2, cx = x(e.time);
+    var color = e.kind==='location' ? 'var(--loc)' : 'var(--ctl)';
+    var stop = stops(e) || (e.hop==='tracker' && e.kind==='status' && !E.some(function(u){return u.hop==='mp-uber' && Math.abs(t(u.time)-t(e.time))<1500;}));
+    var c = el('circle',{cx:cx,cy:cy,r:e.kind==='subscription'?5:6.5,fill:stop?'var(--surface)':color,stroke:stop?'var(--drop)':color,'stroke-width':stop?2.5:1.5,tabindex:0},svg);
+    var html = '<b>'+hhmmss(e.time)+' · '+esc(e.hop)+'</b><br>'+esc(e.what)+'<br>'+esc(e.detail)+(stop?'<br><i>not sent further</i>':'');
+    function show(ev){ tip.innerHTML = html; tip.style.opacity = 1; var r = (ev.touches?ev.touches[0]:ev); var px = r.clientX!==undefined ? r.clientX : c.getBoundingClientRect().left; var py = r.clientY!==undefined ? r.clientY : c.getBoundingClientRect().top; tip.style.left = Math.min(px+14, innerWidth-350)+'px'; tip.style.top = (py+14)+'px'; }
+    c.addEventListener('mousemove', show); c.addEventListener('focus', show); c.addEventListener('touchstart', show, {passive:true});
+    c.addEventListener('mouseleave', function(){tip.style.opacity=0;}); c.addEventListener('blur', function(){tip.style.opacity=0;});
+  });
+
+  // courier path
+  var pts = E.filter(function(e){return e.hop==='uber-direct' && e.kind==='location';}).map(function(e){var m=e.detail.match(/lat ([\d.-]+) lng ([\d.-]+)/); return {time:e.time, lat:+m[1], lng:+m[2]};});
+  var store = {lat:51.5074,lng:-0.1278,label:'store 7507'}, cust = {lat:51.5155,lng:-0.1419,label:'customer'};
+  var map = document.getElementById('map'), MW=460, MH=300; map.setAttribute('viewBox','0 0 '+MW+' '+MH); map.style.width='100%'; map.style.height='auto';
+  var all = pts.concat([store,cust]), minLat=Math.min.apply(null,all.map(function(p){return p.lat;})), maxLat=Math.max.apply(null,all.map(function(p){return p.lat;})), minLng=Math.min.apply(null,all.map(function(p){return p.lng;})), maxLng=Math.max.apply(null,all.map(function(p){return p.lng;}));
+  function mx(p){ return 40 + (p.lng-minLng)/(maxLng-minLng)*(MW-80); } function my(p){ return MH-40 - (p.lat-minLat)/(maxLat-minLat)*(MH-80); }
+  el('line',{x1:mx(store),y1:my(store),x2:mx(cust),y2:my(cust),stroke:'var(--line)','stroke-width':2,'stroke-dasharray':'5 5'},map);
+  [store,cust].forEach(function(p){ el('rect',{x:mx(p)-7,y:my(p)-7,width:14,height:14,rx:3,fill:'var(--fg)'},map); var tx=el('text',{x:mx(p),y:my(p)+(p===store?26:-14),'text-anchor':'middle','class':'lane-sub'},map); tx.textContent=p.label; });
+  var tb = document.querySelector('#loc-table tbody');
+  pts.forEach(function(p,i){
+    var got = E.filter(function(e){return e.hop==='uber-eats' && e.kind==='location' && close(e.detail,'lat '+p.lat+' lng '+p.lng);})[0];
+    el('circle',{cx:mx(p),cy:my(p),r:8,fill:got?'var(--loc)':'var(--surface)',stroke:got?'var(--loc)':'var(--drop)','stroke-width':2.5},map);
+    var n = el('text',{x:mx(p)+12,y:my(p)+4,'class':'axis'},map); n.textContent = (i+1);
+    tb.insertAdjacentHTML('beforeend','<tr><td class="mono">'+(i+1)+' · '+p.lat.toFixed(5)+', '+p.lng.toFixed(5)+'</td><td class="mono">'+hhmmss(p.time)+'</td><td>'+(got?'<span class="pill l">'+hhmmss(got.time)+' accepted</span>':'<span class="pill d">replaced by a newer point</span>')+'</td></tr>');
+  });
+
+  // status codes
+  document.getElementById('t-delivery').innerHTML = DEL.map(function(n,i){return '<tr'+(i===3||i===4?' class="hl"':'')+'><td class="mono">'+i+'</td><td>'+n+(i===3?' → Uber Eats <code>started</code>':i===4?' → Uber Eats <code>delivered</code>':'')+'</td></tr>';}).join('');
+  document.getElementById('t-courier').innerHTML = COU.map(function(n,i){return '<tr><td class="mono">'+i+'</td><td>'+n+'</td></tr>';}).join('');
+
+  // all messages with filters
+  var body = document.querySelector('#events tbody'), filt = document.getElementById('filters'), active = 'all';
+  function render(){
+    body.innerHTML = E.filter(function(e){return active==='all' || e.hop===active || e.kind===active;}).map(function(e){
+      return '<tr><td class="mono">'+hhmmss(e.time)+e.time.slice(19,23)+'</td><td>'+esc(e.hop)+'</td><td><span class="pill '+(e.kind==='location'?'l':'s')+'">'+esc(e.kind)+'</span></td><td>'+esc(e.what)+'</td><td class="mono">'+esc(e.detail)+'</td></tr>';
+    }).join('');
+  }
+  ['all','status','location'].concat(HOPS.map(function(h){return h.id;})).forEach(function(f){
+    var b = document.createElement('button'); b.type='button'; b.textContent=f; b.setAttribute('aria-pressed', f===active);
+    b.onclick = function(){ active=f; [].forEach.call(filt.children,function(c){c.setAttribute('aria-pressed', c.textContent===f);}); render(); };
+    filt.appendChild(b);
+  });
+  render();
+})();
+</script>
+</body></html>

@@ -153,6 +153,7 @@ pre.code i{color:var(--muted);font-style:normal}
     <a href="#decisions-1029"><span>24</span>Decisions and fixes, 2026-10-29</a>
     <a href="#s25"><span>25</span>Gotchas (QA, 2026-10-29)</a>
     <a href="#s26"><span>26</span>End-to-end run in QA, 2026-10-29</a>
+    <a href="chain.html"><span>&rarr;</span>Visual chain of one order</a>
   </nav>
 
   <main>
@@ -2345,6 +2346,8 @@ const (
         </tbody>
       </table></div>
       <p>All three mock-api commits are on branch <code>feature/DAAS-637-mock-courier-locations-and-mp-event-log</code>, tagged <code>2.0.2_dev</code> and <code>2.0.3_dev</code>, and deployed to QA through the CircleCI <code>cd</code> workflow (parameters <code>version</code> and <code>env</code> only; this pipeline has no <code>aws_account</code>).</p>
+      <h3>26.4 Visual chain</h3>
+      <p><a href="chain.html"><code>chain.html</code></a> shows this run hop by hop: a timeline per service with every status and courier location, the courier path with the points Uber Eats received, the step-by-step mapping and the status codes. It is built from <code>dt-chain 7779 --json</code> (<code>~/dragontail/.claude/skills/dragontail-access/scripts/dt-chain</code>), which prints the same timeline for any order.</p>
     </section>
   </main>
 </div>
